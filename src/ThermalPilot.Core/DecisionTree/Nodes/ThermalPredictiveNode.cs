@@ -23,11 +23,13 @@ public class ThermalPredictiveNode : IDecisionNode
         {
             double rth = snapshot.ThermalModel.EstimatedRth;
             double potentialNextPL1 = snapshot.CurrentPL1W + gains.StepUpWatts;
-            
-            // 预测若提升至 potentialNextPL1 时的稳态温度估算:
-            // T_steady = T_now + (P_target - P_now) * R_th
-            double projectedTempRise = (potentialNextPL1 - snapshot.PackagePowerW) * rth;
-            double predictedSteadyTemp = snapshot.CurrentTempC + projectedTempRise;
+
+            // 预测若提升至 potentialNextPL1 时的稳态温度估算。
+            // ΔP 用「PL1 设定值之差」而非「功率传感器读数之差」：
+            // 包功耗读数存在 1~3 秒滞后，用它会把滞后误当成热阻，产生 120°C 这类假预警。
+            double deltaPl1 = potentialNextPL1 - snapshot.CurrentPL1W;
+            double predictedSteadyTemp = snapshot.CurrentTempC + deltaPl1 * rth;
+
 
             if (predictedSteadyTemp > profile.TargetTemperatureCeiling)
             {
@@ -45,7 +47,8 @@ public class ThermalPredictiveNode : IDecisionNode
                 var receipt = new DecisionReceipt
                 {
                     TriggeredRuleName = NodeName,
-                    CausalReason = $"[热阻稳态预警] 当前在线热阻为 {rth:F2} K/W，模型预测若升功耗至 {potentialNextPL1:F1}W 将导致稳态温度攀升至 {predictedSteadyTemp:F1}°C (超标)，提前锁定当前功耗",
+                    CausalReason = $"[热阻稳态预警] 当前在线热阻 {rth:F2} K/W，若 PL1 由 {snapshot.CurrentPL1W:F0}W 提至 {potentialNextPL1:F0}W" +
+                                   $"（+{deltaPl1:F0}W）预计稳态温度 {predictedSteadyTemp:F1}°C，超出天花板 {profile.TargetTemperatureCeiling:F0}°C，提前锁定当前功耗",
                     ActiveLimit = BindingLimit.TempCeiling,
                     Action = action,
                     EvaluatedPath = auditPath.ToArray()

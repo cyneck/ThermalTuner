@@ -24,6 +24,34 @@ public class BottleneckArbiterNode : IDecisionNode
         if (activeLimit == BindingLimit.PowerWall)
         {
             double thermalHeadroom = profile.TargetTemperatureCeiling - snapshot.CurrentTempC;
+
+            // 场景 A0: 已到硬件 PL1 上限，无法继续提升
+            if (snapshot.CurrentPL1W >= profile.Hardware.MaxPL1 - 0.01)
+            {
+                var cappedAction = new ControllerAction
+                {
+                    TargetPL1W = snapshot.CurrentPL1W,
+                    TargetPL2W = snapshot.CurrentPL1W * profile.Pl2Ratio,
+                    TargetTauS = profile.TauSeconds,
+                    TargetEpp = profile.Epp,
+                    TargetFanPercent = snapshot.CurrentFanPercent,
+                    Direction = 0,
+                    ForceImmediateApply = false
+                };
+
+                var cappedReceipt = new DecisionReceipt
+                {
+                    TriggeredRuleName = NodeName,
+                    CausalReason = $"[已达功耗上限] PL1 已到硬件上限 {profile.Hardware.MaxPL1:F0}W，无法继续提升；" +
+                                   $"当前温度 {snapshot.CurrentTempC:F1}°C，仍有 {thermalHeadroom:F1}°C 余量",
+                    ActiveLimit = BindingLimit.PowerWall,
+                    Action = cappedAction,
+                    EvaluatedPath = auditPath.ToArray()
+                };
+
+                return new DecisionResult(IsMatch: true, Receipt: cappedReceipt);
+            }
+
             if (thermalHeadroom >= gains.DeadbandDeltaT && snapshot.CurrentPL1W < profile.Hardware.MaxPL1)
             {
                 double nextPL1 = Math.Min(profile.Hardware.MaxPL1, snapshot.CurrentPL1W + gains.StepUpWatts);

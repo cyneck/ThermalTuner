@@ -1,16 +1,26 @@
 namespace ThermalPilot.Core;
 
+/// <summary>
+/// 在线热阻估计（R_th = ΔT / ΔP）。
+/// 最小二乘拟合功率-温度斜率，并要求：
+///   · 功率跨度 ≥ 12W（跨度过小时斜率会被量化噪声放大）
+///   · 拟合优度 R² ≥ 0.5（避免把负载抖动当成热响应）
+///   · 斜率落在物理可用区间 [0.2, 2.0] K/W
+/// 任一条件不满足即放弃本拍估计：宁可"没有模型"，也不用错模型做预测。
+/// </summary>
 public class ThermalResistance
 {
     public const double MinKperW = 0.2;
-    public const double MaxKperW = 3.0;
-    public const double MinSpanW = 8.0;
+    public const double MaxKperW = 2.0;
+    public const double MinSpanW = 12.0;
     public const double MinRiseC = 4.0;
+    public const double MinRSquared = 0.5;
 
     public double Value { get; private set; } = double.NaN;
     public bool Solved => !double.IsNaN(Value);
     public double PowerSpan { get; private set; }
     public double TempSpan { get; private set; }
+    public double RSquared { get; private set; }
     public string LastReject { get; private set; } = string.Empty;
     public int Rejected { get; private set; }
 
@@ -29,32 +39,80 @@ public class ThermalResistance
         _pts.Add((powerW, tempC, ambientC, loadPct));
         if (_pts.Count > 60) _pts.RemoveAt(0);
 
-        if (_pts.Count >= 10)
+        if (_pts.Count < 10)
         {
-            double minP = _pts.Min(p => p.P);
-            double maxP = _pts.Max(p => p.P);
-            double minT = _pts.Min(p => p.T);
-            double maxT = _pts.Max(p => p.T);
-
-            PowerSpan = maxP - minP;
-            TempSpan = maxT - minT;
-
-            if (PowerSpan >= MinSpanW && TempSpan >= MinRiseC)
-            {
-                // Simple regression slope deltaT / deltaP
-                double slope = TempSpan / Math.Max(1.0, PowerSpan);
-                if (slope >= MinKperW && slope <= MaxKperW)
-                {
-                    Value = slope;
-                    why = "Fitted successfully";
-                    return true;
-                }
-            }
+            why = "Insufficient samples";
+            LastReject = why;
+            return false;
         }
 
-        why = "Insufficient span";
-        LastReject = why;
-        return false;
+        double minP = _pts.Min(p => p.P);
+        double maxP = _pts.Max(p => p.P);
+        double minT = _pts.Min(p => p.T);
+        double maxT = _pts.Max(p => p.T);
+
+        PowerSpan = maxP - minP;
+        TempSpan = maxT - minT;
+
+        if (PowerSpan < MinSpanW || TempSpan < MinRiseC)
+        {
+            why = "Insufficient span";
+            LastReject = why;
+            return false;
+        }
+
+        // 最小二乘：T = a + R·P
+        int n = _pts.Count;
+        double meanP = _pts.Average(p => p.P);
+        double meanT = _pts.Average(p => p.T);
+        double sxx = 0, sxy = 0, sst = 0;
+        foreach (var (p, t, _, _) in _pts)
+        {
+            double dp = p - meanP, dt = t - meanT;
+            sxx += dp * dp;
+            sxy += dp * dt;
+            sst += dt * dt;
+        }
+
+        if (sxx <= 1e-6 || sst <= 1e-6)
+        {
+            why = "Degenerate data";
+            LastReject = why;
+            return false;
+        }
+
+        double slope = sxy / sxx;
+        double intercept = meanT - slope * meanP;
+
+        // 拟合优度
+        double ssres = 0;
+        foreach (var (p, t, _, _) in _pts)
+        {
+            double pred = intercept + slope * p;
+            ssres += (t - pred) * (t - pred);
+        }
+        RSquared = 1.0 - ssres / sst;
+
+        if (slope < MinKperW || slope > MaxKperW)
+        {
+            why = $"R out of range ({slope:F2} K/W)";
+            LastReject = why;
+            Rejected++;
+            return false;
+        }
+
+        if (RSquared < MinRSquared)
+        {
+            why = $"Poor fit (R²={RSquared:F2})";
+            LastReject = why;
+            Rejected++;
+            return false;
+        }
+
+        // 指数平滑，避免单窗口跳变
+        Value = Solved ? Value * 0.7 + slope * 0.3 : slope;
+        why = "Fitted successfully";
+        return true;
     }
 
     public void Reset()
@@ -63,6 +121,7 @@ public class ThermalResistance
         Value = double.NaN;
         PowerSpan = 0;
         TempSpan = 0;
+        RSquared = 0;
         Rejected = 0;
         LastReject = string.Empty;
     }
