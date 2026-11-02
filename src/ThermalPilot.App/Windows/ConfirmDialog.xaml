@@ -1,0 +1,44 @@
+<Window x:Class="ThermalPilot.App.Windows.ConfirmDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="确认操作" Width="480" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False" Background="{StaticResource BgSurface}"
+        FontFamily="{StaticResource UiFont}">
+
+  <StackPanel Margin="20">
+    <TextBlock x:Name="TitleText" Style="{StaticResource H1}" Text="确认应用参数" />
+
+    <TextBlock x:Name="SummaryText" Style="{StaticResource Body}" Margin="0,8,0,0"
+               Foreground="{StaticResource TextSecondary}" />
+
+    <ItemsControl x:Name="ItemsList" Margin="0,12,0,0">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <TextBlock Style="{StaticResource Mono}" Text="{Binding Path=., Mode=OneWay}"
+                     TextWrapping="Wrap" Margin="0,2,0,0"
+                     Foreground="{StaticResource TextSecondary}" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Border Background="{StaticResource WarnSoft}" BorderBrush="{StaticResource Warn}"
+            BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
+      <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
+                 Text="写硬件不可逆：程序会先备份原值，写入后回读校验，失败自动回滚；异常退出时由看门狗在 3 秒内恢复。" />
+    </Border>
+
+    <StackPanel x:Name="TypedPanel" Margin="0,14,0,0" Visibility="Collapsed">
+      <TextBlock x:Name="TypedHint" Style="{StaticResource Label}" Margin="0,0,0,6" Text="请输入「恢复」以继续" />
+      <TextBox x:Name="TypedBox" Style="{StaticResource FieldBox}" Width="200" HorizontalAlignment="Left"
+               TextChanged="Typed_Changed" />
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+      <Button Content="取消" Style="{StaticResource GhostButton}" MinWidth="88" IsCancel="True"
+              Click="Cancel_Click" />
+      <Button x:Name="ConfirmButton" Content="确认" Style="{StaticResource PrimaryButton}" MinWidth="104"
+              Margin="8,0,0,0" IsEnabled="False" Click="Confirm_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>

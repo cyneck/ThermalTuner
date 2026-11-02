@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ThermalPilot.Runner</RootNamespace>
+    <AssemblyName>ThermalPilot.Runner</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ThermalPilot.Core\ThermalPilot.Core.csproj" />
+    <ProjectReference Include="..\..\tests\ThermalPilot.Core.Tests\ThermalPilot.Core.Tests.csproj" />
+  </ItemGroup>
+
+</Project>

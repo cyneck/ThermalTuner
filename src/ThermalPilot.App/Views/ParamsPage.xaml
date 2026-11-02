@@ -1,0 +1,212 @@
+<UserControl x:Class="ThermalPilot.App.Views.ParamsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent">
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- 头部 -->
+    <Border Grid.Row="0" Style="{StaticResource Card}">
+      <Grid>
+        <StackPanel>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="CPU 功耗参数" Style="{StaticResource H2}" />
+            <Border x:Name="ModeChip" Style="{StaticResource Chip}" Background="{StaticResource BgSubtle}"
+                    Margin="10,0,0,0">
+              <TextBlock x:Name="ModeChipText" Style="{StaticResource Mono}" FontSize="11" Text="只读" />
+            </Border>
+            <Border x:Name="MsrChip" Style="{StaticResource Chip}" Background="{StaticResource WarnSoft}"
+                    BorderBrush="{StaticResource Warn}" ToolTip="{Binding MsrDetail}">
+              <TextBlock x:Name="MsrChipText" Style="{StaticResource Mono}" FontSize="11"
+                         Foreground="{StaticResource Warn}"
+                         Text="{Binding MsrSummary, Mode=OneWay}" />
+            </Border>
+          </StackPanel>
+          <TextBlock Style="{StaticResource Label}" Margin="0,6,0,0"
+                     Text="默认只读，避免误改；解锁后可编辑并校验。范围来自本机探测结果，不是硬编码。" />
+          <TextBlock x:Name="MsrHint" Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0"
+                     TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}"
+                     Text="当前为演练模式：会完整走校验与确认，但不写硬件。" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Button x:Name="UnlockButton" Content="解锁编辑" Style="{StaticResource GhostButton}"
+                  Click="Unlock_Click" />
+          <Button Content="恢复默认" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                  Click="Reset_Click" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- 参数表 -->
+    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,12,0,0">
+      <StackPanel>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="参数" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="当前生效" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="2" Text="待应用" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="3" Text="硬件范围" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="4" Text="为什么是这个范围" Style="{StaticResource Label}" FontSize="11" />
+        </Grid>
+
+        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,8,0,0" />
+
+        <!-- PL1 -->
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="PL1 持续功耗" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x610 [14:0]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
+            <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
+          </TextBlock>
+          <TextBox x:Name="Pl1Box" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap">
+            <Run Text="[" /><Run Text="{Binding Limits.MinPL1, Mode=OneWay}" /><Run Text=", " />
+            <Run Text="{Binding Limits.MaxPL1, Mode=OneWay}" /><Run Text="] W" />
+          </TextBlock>
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="长期可持续的封装功耗，决定稳态温度与风扇噪音。" />
+        </Grid>
+
+        <!-- PL2 -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="PL2 短时功耗" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x610 [46:32]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
+            <Run Text="{Binding Pl2Text, Mode=OneWay}" /><Run Text=" W" />
+          </TextBlock>
+          <TextBox x:Name="Pl2Box" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap">
+            <Run Text="[" /><Run Text="{Binding Limits.MinPL2, Mode=OneWay}" /><Run Text=", " />
+            <Run Text="{Binding Limits.MaxPL2, Mode=OneWay}" /><Run Text="] W 且 ≥ PL1" />
+          </TextBlock>
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="短时爆发上限，受 Tau 约束；小于 PL1 无物理意义。" />
+        </Grid>
+
+        <!-- Tau -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Tau 时间常数" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x610 [23:17]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
+            <Run Text="{Binding TauText, Mode=OneWay}" /><Run Text=" s" />
+          </TextBlock>
+          <TextBox x:Name="TauBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="1/2/4/8/16/28/32/64 s"
+                     Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="PL2 保持多久后回落到 PL1，只能取硬件编码步长。" />
+        </Grid>
+
+        <!-- EPP -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="EPP 能效偏好" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x774 [31:24]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding EppText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="13" VerticalAlignment="Center" />
+          <TextBox x:Name="EppBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="[0, 255] · 0=性能 255=省电" Style="{StaticResource Mono}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="芯片自主调频时的偏好权重，影响响应速度与瞬时功耗。" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- 校验与操作 -->
+    <Grid Grid.Row="2" Margin="0,12,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <Border Style="{StaticResource Card}" Padding="14,10">
+        <StackPanel>
+          <TextBlock Text="校验结果" Style="{StaticResource Label}" FontSize="11" />
+          <ItemsControl x:Name="ViolationList" Margin="0,6,0,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" FontSize="12"
+                           TextWrapping="Wrap" Margin="0,2,0,0" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock x:Name="DiffText" Style="{StaticResource Mono}" FontSize="11" Margin="0,6,0,0"
+                     Foreground="{StaticResource TextSecondary}" Text="无改动" />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+        <Button x:Name="ApplyButton" Content="应用（演练）" Style="{StaticResource PrimaryButton}"
+                MinWidth="110" IsEnabled="False" Click="Apply_Click" />
+        <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="Revert_Click" />
+        <Button Content="恢复原值" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                Click="Restore_Click" />
+      </StackPanel>
+    </Grid>
+
+    <!-- 结果横幅 -->
+    <Border x:Name="OutcomeBanner" Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0"
+            Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}"
+            VerticalAlignment="Top" Visibility="Collapsed">
+      <TextBlock x:Name="OutcomeText" Style="{StaticResource Body}" Foreground="{StaticResource AccentDeep}"
+                 TextWrapping="Wrap" />
+    </Border>
+  </Grid>
+</UserControl>
