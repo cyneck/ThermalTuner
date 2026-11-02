@@ -1,40 +1,25 @@
+using ThermalPilot.Core.DecisionTree;
+using ThermalPilot.Core.Taxonomy;
+
 namespace ThermalPilot.Core;
-
-public class AutoCpuDecision
-{
-    public bool Valid { get; set; }
-    public double Pl1W { get; set; }
-    public double Pl2W { get; set; }
-    public double TauS { get; set; }
-    public int Epp { get; set; }
-    public double Reff { get; set; }
-    public double PredictedC { get; set; }
-    public double PredictedSteadyC { get; set; }
-    public bool RConfident { get; set; }
-    public string RQuality { get; set; } = "Low";
-    public double PowerCapW { get; set; }
-    public string Reason { get; set; } = string.Empty;
-    public BindingLimit Limit { get; set; }
-    public int Direction { get; set; } // -1, 0, +1
-}
-
-public class PerfSample
-{
-    public double CoreClocksGhz { get; set; }
-    public double MaxTurboGhz { get; set; }
-    public bool Prochot { get; set; }
-}
 
 public class AutoCpuController
 {
     public const double SafetyCeilingC = 95.0;
 
     private readonly ThermalResistance _r = new();
+    private readonly ThermalDecisionEngine _engine = new();
+    private readonly TuningGains _gains = TuningGains.Default;
     private double _pl1 = 35.0;
+    private double _currentFan = 50.0;
     private DateTime _last = DateTime.MinValue;
 
     public ThermalResistance Resistance => _r;
     public bool HasR => _r.Solved;
+    public ThermalDecisionEngine Engine => _engine;
+
+    // 最新一次决策的完整因果凭证
+    public DecisionReceipt? LatestReceipt { get; private set; }
 
     public AutoCpuDecision Update(
         double tempC,
@@ -48,107 +33,88 @@ public class AutoCpuController
         double loadPct = double.NaN,
         double dTdt = double.NaN)
     {
-        double actualCeiling = Math.Min(ceilingC, SafetyCeilingC);
-        double tau = TauForProfile(profile);
-        int epp = EppForProfile(profile);
-        double ratio = Pl2Ratio(profile);
+        // 1. 构建强类型 HardwareLimits 与 UserProfile
+        var hwLimits = new HardwareLimits
+        {
+            MinPL1 = minW,
+            MaxPL1 = maxW,
+            MaxSafeCeiling = SafetyCeilingC
+        };
 
-        // Update thermal resistance estimator
+        var userProfile = UserProfile.FromName(profile, hwLimits) with
+        {
+            TargetTemperatureCeiling = Math.Min(ceilingC, hwLimits.MaxSafeCeiling)
+        };
+
+        // 2. 采样更新在线热阻模型
         if (!double.IsNaN(loadPct))
         {
             _r.TryAdd(powerW, tempC, ambientC, loadPct, out _);
         }
 
-        var dec = new AutoCpuDecision
+        var identifiedState = new IdentifiedThermalState
         {
-            Valid = true,
-            Reff = _r.Solved ? _r.Value : 0.8,
-            RConfident = _r.Solved,
-            TauS = tau,
-            Epp = epp
+            EstimatedRth = _r.Solved ? _r.Value : double.NaN,
+            IsConfident = _r.Solved,
+            QualityDescription = _r.Solved ? "Solved" : _r.LastReject,
+            PredictedSteadyTempC = _r.Solved ? tempC + ((_pl1 - powerW) * _r.Value) : tempC
         };
 
-        // Monolithic if-else logic
-        if (perf?.Prochot == true || tempC >= actualCeiling)
+        // 3. 构建当前拍只读物理快照
+        var snapshot = new ThermalSnapshot
         {
-            _pl1 = Math.Max(minW, _pl1 - 6.0);
-            dec.Limit = BindingLimit.ThermalLimit;
-            dec.Direction = -1;
-            dec.Reason = "Temperature reached ceiling, throttle power down";
-        }
-        else if (loadPct < 20.0 || powerW < 12.0)
-        {
-            dec.Limit = BindingLimit.LightLoad;
-            dec.Direction = 0;
-            dec.Reason = "Load is light, hold power";
-        }
-        else if (perf != null && perf.CoreClocksGhz >= perf.MaxTurboGhz * 0.98)
-        {
-            dec.Limit = BindingLimit.FrequencyCap;
-            dec.Direction = 0;
-            dec.Reason = "Max frequency achieved, no need to boost power";
-        }
-        else if (actualCeiling - tempC > 2.0 && _pl1 < maxW)
-        {
-            _pl1 = Math.Min(maxW, _pl1 + 3.0);
-            dec.Limit = BindingLimit.PowerWall;
-            dec.Direction = 1;
-            dec.Reason = "Thermal headroom available, increase power";
-        }
-        else
-        {
-            dec.Limit = BindingLimit.Unknown;
-            dec.Direction = 0;
-            dec.Reason = "Equilibrium maintained";
-        }
+            CurrentTempC = tempC,
+            AmbientTempC = ambientC,
+            PackagePowerW = powerW,
+            CurrentPL1W = _pl1,
+            CurrentFanPercent = _currentFan,
+            LoadPercent = double.IsNaN(loadPct) ? 50.0 : loadPct,
+            DtDt = double.IsNaN(dTdt) ? 0.0 : dTdt,
+            IsProchotActive = perf?.Prochot == true,
+            CoreClockGhz = perf?.CoreClocksGhz ?? 0.0,
+            MaxTurboGhz = perf?.MaxTurboGhz ?? 0.0,
+            ThermalModel = identifiedState
+        };
 
-        dec.Pl1W = _pl1;
-        dec.Pl2W = _pl1 * ratio;
-        dec.PredictedSteadyC = tempC + ((dec.Pl1W - powerW) * dec.Reff);
+        // 4. 执行决策树短路求值
+        var receipt = _engine.EvaluateTick(snapshot, userProfile, _gains);
+        LatestReceipt = receipt;
 
-        return dec;
+        // 5. 应用状态更新
+        _pl1 = receipt.Action.TargetPL1W;
+        _currentFan = receipt.Action.TargetFanPercent;
+        _last = DateTime.UtcNow;
+
+        // 6. 返回兼容性 DTO，附带增强因果信息
+        return new AutoCpuDecision
+        {
+            Valid = true,
+            Pl1W = receipt.Action.TargetPL1W,
+            Pl2W = receipt.Action.TargetPL2W,
+            TauS = receipt.Action.TargetTauS,
+            Epp = receipt.Action.TargetEpp,
+            Reff = _r.Solved ? _r.Value : 0.8,
+            RConfident = _r.Solved,
+            RQuality = identifiedState.QualityDescription,
+            PredictedSteadyC = identifiedState.PredictedSteadyTempC,
+            Reason = receipt.CausalReason,
+            Limit = receipt.ActiveLimit,
+            Direction = receipt.Action.Direction
+        };
     }
 
     public void Reset()
     {
         _pl1 = 35.0;
         _r.Reset();
+        LatestReceipt = null;
     }
 
     public void ResetResistance() => _r.Reset();
 
-    public static double TargetCForProfile(string profile) => profile.ToLowerInvariant() switch
-    {
-        "silent" => 85.0,
-        "performance" => 92.0,
-        _ => 88.0
-    };
-
-    public static double FanMaxForProfile(string profile) => profile.ToLowerInvariant() switch
-    {
-        "silent" => 55.0,
-        "performance" => 100.0,
-        _ => 75.0
-    };
-
-    public static int EppForProfile(string profile) => profile.ToLowerInvariant() switch
-    {
-        "silent" => 200,
-        "performance" => 0,
-        _ => 128
-    };
-
-    public static double Pl2Ratio(string profile) => profile.ToLowerInvariant() switch
-    {
-        "silent" => 1.15,
-        "performance" => 1.35,
-        _ => 1.25
-    };
-
-    public static double TauForProfile(string profile) => profile.ToLowerInvariant() switch
-    {
-        "silent" => 8.0,
-        "performance" => 32.0,
-        _ => 16.0
-    };
+    public static double TargetCForProfile(string profile) => UserProfile.FromName(profile).TargetTemperatureCeiling;
+    public static double FanMaxForProfile(string profile) => UserProfile.FromName(profile).FanMaxPercent;
+    public static int EppForProfile(string profile) => UserProfile.FromName(profile).Epp;
+    public static double Pl2Ratio(string profile) => UserProfile.FromName(profile).Pl2Ratio;
+    public static double TauForProfile(string profile) => UserProfile.FromName(profile).TauSeconds;
 }
