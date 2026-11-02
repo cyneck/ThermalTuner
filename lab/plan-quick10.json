@@ -1,0 +1,12 @@
+{
+  "name": "quick-10min-v1",
+  "note": "10 分钟：三个功率层级，可检验线性性与二次项；末尾 220s 冷却把 τ 钉准。",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "Q0", "label": "空闲基线", "sec": 30, "load": "idle", "cap": 100 },
+    { "id": "Q1", "label": "满载 cap100（最高功耗）", "sec": 130, "load": "cpu", "cap": 100 },
+    { "id": "Q2", "label": "满载 cap75", "sec": 110, "load": "cpu", "cap": 75 },
+    { "id": "Q3", "label": "满载 cap45", "sec": 110, "load": "cpu", "cap": 45 },
+    { "id": "Q4", "label": "冷却（长冷却，τ 最准）", "sec": 220, "load": "idle", "cap": 100 }
+  ]
+}

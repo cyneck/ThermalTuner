@@ -1,0 +1,12 @@
+{
+  "synthetic": true,
+  "note": "synthetic=1：温度列已被替换为瞬态外推的渐近值 A_k （非实测稳态），仅供下游 lab_model/lab_doe 估计参数",
+  "source_csv": "C:\\Users\\hp\\WorkBuddy\\2026-10-27-18-42-10\\ThermalPilot\\lab-data\\_q5demo\\lab-q5-20261028-1900.csv",
+  "asymptotes": {
+    "Q0": 40.13,
+    "Q1": 80.43,
+    "Q2": 55.54,
+    "Q3": 39.49
+  },
+  "tau_s": 52.7
+}

@@ -1,0 +1,12 @@
+{
+  "name": "deep-cap3-v1",
+  "note": "19.5 分钟深测：三个功率层级，每档都跑到真稳态，末段长冷却把 tau 钉死。目的是拿到'真值'，用来反向校验 3/5/10 分钟快测的外推误差。",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "D0", "label": "空闲基线（定初始条件与噪声底）", "sec": 90,  "load": "idle", "cap": 100 },
+    { "id": "D1", "label": "满载 cap100 Turbo 开（最高功耗，安全上最关键）", "sec": 300, "load": "cpu", "cap": 100, "boost": 2 },
+    { "id": "D2", "label": "满载 cap70（第二功率层级）", "sec": 240, "load": "cpu", "cap": 70, "boost": 2 },
+    { "id": "D3", "label": "满载 cap40（最低功耗层级，给线性拟合第三个点）", "sec": 240, "load": "cpu", "cap": 40, "boost": 2 },
+    { "id": "D4", "label": "长冷却（纯指数衰减，tau 最干净）", "sec": 300, "load": "idle", "cap": 100 }
+  ]
+}

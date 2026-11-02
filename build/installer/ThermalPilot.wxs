@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ThermalPilot MSI 安装包（WiX 5 构建）
+  - perMachine（需要管理员），装到 Program Files\ThermalPilot
+  - 桌面 + 开始菜单快捷方式（自定义图标）
+  - 控制面板/系统设置中带卸载入口
+  -   卸载前执行 ThermalPilot.exe（restore 参数）还原电源方案（风扇策略随进程退出自动还原）
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="ThermalPilot 温控与调频"
+           Manufacturer="ThermalPilot"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="F3A71C92-6D4E-4B7A-9C18-2A5E0B7D6311"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500"
+           Language="2052" Codepage="936">
+
+    <SummaryInformation Description="ThermalPilot 安装程序" Manufacturer="ThermalPilot" />
+
+    <MajorUpgrade DowngradeErrorMessage="已安装更高版本的 ThermalPilot，请先在「设置 - 应用」中卸载后再安装。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <Launch Condition="Installed OR (VersionNT &gt;= 1000)" Message="ThermalPilot 面向 Windows 10 / 11（1607 及以上），当前系统版本过低。" />
+
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseFile)" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ThermalPilot" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="ThermalPilot" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Component Id="MainExe" Directory="INSTALLFOLDER" Guid="9E2B1F4A-1C7D-4B9E-8F33-6A1D5C0B2E44">
+      <File Id="ThermalPilotExe" Name="ThermalPilot.exe"
+            Source="$(var.PublishDir)\ThermalPilot.exe" KeyPath="yes" Vital="yes">
+        <Shortcut Id="StartMenuShortcut" Directory="ShortcutFolder"
+                  Name="ThermalPilot 温控与调频"
+                  Description="基于 CPU/GPU 温度的动态风扇调速、降频与降压"
+                  WorkingDirectory="INSTALLFOLDER" Advertise="no" Icon="AppIcon" />
+        <Shortcut Id="DesktopShortcut" Directory="DesktopFolder"
+                  Name="ThermalPilot 温控与调频"
+                  Description="基于 CPU/GPU 温度的动态风扇调速、降频与降压"
+                  WorkingDirectory="INSTALLFOLDER" Advertise="no" Icon="AppIcon" />
+      </File>
+    </Component>
+
+    <Component Id="ShortcutFolderCleanup" Directory="ShortcutFolder" Guid="1B7C2A0E-8F3D-4E92-9C4B-05A6D1E7F382">
+      <RemoveFolder Id="RemoveShortcutFolderOnUninstall" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\ThermalPilot" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <CustomAction Id="RestorePower" FileRef="ThermalPilotExe" ExeCommand="--restore"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RestorePower" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+    <Feature Id="Main" Title="ThermalPilot" Description="主程序与快捷方式" Level="1">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="ShortcutFolderCleanup" />
+    </Feature>
+
+  </Package>
+</Wix>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>短时实验计划验证</title>
+<style>
+:root{--bg:#0f1620;--card:#16202c;--line:#243244;--fg:#e6eef7;--mut:#8b9bb0;
+--acc:#4fb0c6;--green:#5fb87a;--warn:#e0a45c;--bad:#c9736a;}
+*{box-sizing:border-box}
+body{margin:0;padding:30px;background:var(--bg);color:var(--fg);
+font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+h1{font-size:23px;font-weight:600;margin:0 0 6px}
+h2{font-size:15px;font-weight:600;margin:30px 0 12px;color:var(--acc);
+border-left:3px solid var(--acc);padding-left:9px}
+.sub{color:var(--mut);font-size:12.5px;margin-bottom:24px}
+table{border-collapse:collapse;width:100%;background:var(--card);
+border:1px solid var(--line);border-radius:9px;overflow:hidden;font-size:12.5px}
+th{background:#1b2735;color:var(--mut);font-weight:500;text-align:left;
+padding:8px 10px;font-size:11.5px;white-space:nowrap}
+td{padding:7px 10px;border-top:1px solid var(--line)}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+td.bad{color:var(--bad)} td.delt{color:var(--green)}
+tr.warn td{background:rgba(224,164,92,.08)}
+.chart{display:flex;align-items:flex-end;gap:34px;height:170px;background:var(--card);
+border:1px solid var(--line);border-radius:9px;padding:16px 24px 8px;margin-top:8px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;
+justify-content:flex-end}
+.pair{display:flex;align-items:flex-end;gap:5px;flex:1}
+.bf{width:26px;background:linear-gradient(180deg,#4fb0c6,#2b6f80);border-radius:3px 3px 0 0}
+.bn{width:26px;background:linear-gradient(180deg,#c9736a,#7a3f39);border-radius:3px 3px 0 0}
+.blab{font-size:11.5px;color:var(--mut);margin-top:7px}
+.legend{color:var(--mut);font-size:11.5px;margin-top:9px;display:flex;
+gap:8px;align-items:center}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.sw.bf{background:#4fb0c6} .sw.bn{background:#c9736a;margin-left:14px}
+.note{background:rgba(79,176,198,.09);border:1px solid rgba(79,176,198,.28);
+border-radius:8px;padding:12px 15px;font-size:12.8px;margin-top:16px;line-height:1.75}
+.warnbox{background:rgba(224,164,92,.1);border:1px solid rgba(224,164,92,.28);
+border-radius:8px;padding:12px 15px;font-size:12.8px;margin-top:16px;line-height:1.75;
+color:#e8c9a0}
+code{background:#1b2735;padding:1px 5px;border-radius:3px;font-size:12px}
+</style></head><body>
+<h1>短时实验计划验证</h1>
+<div class="sub">用物理仿真器的<b>解析真值</b>检验 3/5/10 分钟计划：
+仿真器 τ = 74s、T_amb = 31.0℃，
+"误差"= 外推渐近温度 − 解析稳态真值。不需要占用真机时间。</div>
+
+<h2>预算 → 误差</h2>
+<table><tr><th>计划</th><th>预算</th><th>τ 估计</th><th>最大误差 ℃</th>
+<th>RMSE ℃</th><th>不做外推的误差</th><th>结论</th></tr><tr><td><b>quick3</b></td><td>3 分钟</td><td class='num'>47s</td><td class='num'><b>7.48</b></td><td class='num'>5.12</td><td class='num bad'>14.45</td><td>需谨慎</td></tr><tr><td><b>quick5</b></td><td>5 分钟</td><td class='num'>53s</td><td class='num'><b>1.03</b></td><td class='num'>0.66</td><td class='num bad'>10.50</td><td>需谨慎</td></tr><tr><td><b>quick10</b></td><td>10 分钟</td><td class='num'>56s</td><td class='num'><b>1.14</b></td><td class='num'>0.52</td><td class='num bad'>6.10</td><td>需谨慎</td></tr></table>
+
+<div class='chart'><div class='bar'><div class='pair'><div class='bf' style='height:130px'></div><div class='bn' style='height:130px'></div></div><div class='blab'>3 min</div></div><div class='bar'><div class='pair'><div class='bf' style='height:18px'></div><div class='bn' style='height:130px'></div></div><div class='blab'>5 min</div></div><div class='bar'><div class='pair'><div class='bf' style='height:20px'></div><div class='bn' style='height:106px'></div></div><div class='blab'>10 min</div></div></div><div class='legend'><span class='sw bf'></span>外推后误差<span class='sw bn'></span>直接取尾均值</div>
+
+<div class="note">
+<b>读法：</b>蓝柱是"从轨迹外推稳态"的误差，红柱是"直接取段尾均值"的误差。
+两栏差一个数量级 —— 这就是为什么 5 分钟能够用：<b>它不是"测了 5 分钟就以为到稳态了"，
+而是"测 5 分钟的轨迹，然后把指数曲线推到稳态"</b>。
+红柱的 8~11℃ 正是市面上大多数工具在短测下的隐性误差。
+</div>
+
+<div class="warnbox">
+<b>3 分钟的边界：</b>cap50 段只有 45 秒、走了 0.44τ，外推出来偏差 7.5℃。
+凡是单段短于 0.7τ，外推就不可信 —— 这不是算法问题，是信息不足。
+5 分钟的 cap100 段给到 150 秒（2.85τ），误差才压到 1℃ 以内。
+</div>
+
+<h2>quick3 · 3 分钟（只够看趋势，不建议做控制表）</h2><table><tr><th>段</th><th>cap</th><th>负载</th><th>时长</th><th>功耗 W</th><th>外推 A</th><th>±95%</th><th>真值</th><th>误差</th><th>τ覆盖</th><th>尾均值误差</th></tr><tr><td>Q0</td><td>100%</td><td>idle</td><td class='num'>20s</td><td class='num'>5.2</td><td class='num'><b>40.13</b></td><td class='num'>±16.21</td><td class='num'>40.05</td><td class='num delt'>+0.08</td><td class='num'>4.89</td><td class='num bad'>+0.01</td></tr><tr><td>Q1</td><td>100%</td><td>cpu</td><td class='num'>80s</td><td class='num'>40.0</td><td class='num'><b>78.42</b></td><td class='num'>±0.56</td><td class='num'>81.46</td><td class='num delt'>-3.04</td><td class='num'>1.68</td><td class='num bad'>-12.42</td></tr><tr class='warn'><td>Q2</td><td>50%</td><td>cpu</td><td class='num'>45s</td><td class='num'>14.4</td><td class='num'><b>45.67</b></td><td class='num'>±0.75</td><td class='num'>53.15</td><td class='num delt'>-7.48</td><td class='num'>0.44</td><td class='num bad'>+10.18</td></tr><tr><td>Q3</td><td>100%</td><td>idle</td><td class='num'>35s</td><td class='num'>5.2</td><td class='num'><b>46.34</b></td><td class='num'>±0.52</td><td class='num'>40.05</td><td class='num delt'>+6.29</td><td class='num'>0.76</td><td class='num bad'>+14.45</td></tr></table><h2>quick5 · 5 分钟（推荐：够外推，够粗反解）</h2><table><tr><th>段</th><th>cap</th><th>负载</th><th>时长</th><th>功耗 W</th><th>外推 A</th><th>±95%</th><th>真值</th><th>误差</th><th>τ覆盖</th><th>尾均值误差</th></tr><tr><td>Q0</td><td>100%</td><td>idle</td><td class='num'>20s</td><td class='num'>5.2</td><td class='num'><b>40.13</b></td><td class='num'>±16.21</td><td class='num'>40.05</td><td class='num delt'>+0.08</td><td class='num'>4.89</td><td class='num bad'>+0.01</td></tr><tr><td>Q1</td><td>100%</td><td>cpu</td><td class='num'>150s</td><td class='num'>40.0</td><td class='num'><b>80.43</b></td><td class='num'>±0.10</td><td class='num'>81.46</td><td class='num delt'>-1.03</td><td class='num'>2.85</td><td class='num bad'>-4.77</td></tr><tr><td>Q2</td><td>60%</td><td>cpu</td><td class='num'>60s</td><td class='num'>16.9</td><td class='num'><b>55.54</b></td><td class='num'>±0.34</td><td class='num'>56.14</td><td class='num delt'>-0.60</td><td class='num'>0.92</td><td class='num bad'>+9.97</td></tr><tr><td>Q3</td><td>100%</td><td>idle</td><td class='num'>70s</td><td class='num'>5.2</td><td class='num'><b>39.49</b></td><td class='num'>±0.32</td><td class='num'>40.05</td><td class='num delt'>-0.56</td><td class='num'>0.97</td><td class='num bad'>+10.50</td></tr></table><h2>quick10 · 10 分钟（推荐：三个功率层级，线性性可检验）</h2><table><tr><th>段</th><th>cap</th><th>负载</th><th>时长</th><th>功耗 W</th><th>外推 A</th><th>±95%</th><th>真值</th><th>误差</th><th>τ覆盖</th><th>尾均值误差</th></tr><tr><td>Q0</td><td>100%</td><td>idle</td><td class='num'>30s</td><td class='num'>5.2</td><td class='num'><b>40.10</b></td><td class='num'>±4.44</td><td class='num'>40.05</td><td class='num delt'>+0.05</td><td class='num'>7.47</td><td class='num bad'>+0.00</td></tr><tr><td>Q1</td><td>100%</td><td>cpu</td><td class='num'>130s</td><td class='num'>39.9</td><td class='num'><b>80.21</b></td><td class='num'>±0.11</td><td class='num'>81.35</td><td class='num delt'>-1.14</td><td class='num'>2.50</td><td class='num bad'>-6.10</td></tr><tr><td>Q2</td><td>75%</td><td>cpu</td><td class='num'>110s</td><td class='num'>20.9</td><td class='num'><b>60.91</b></td><td class='num'>±0.15</td><td class='num'>60.77</td><td class='num delt'>+0.14</td><td class='num'>1.80</td><td class='num bad'>+3.80</td></tr><tr><td>Q3</td><td>45%</td><td>cpu</td><td class='num'>110s</td><td class='num'>13.3</td><td class='num'><b>51.91</b></td><td class='num'>±0.14</td><td class='num'>51.80</td><td class='num delt'>+0.11</td><td class='num'>1.86</td><td class='num bad'>+2.66</td></tr><tr><td>Q4</td><td>100%</td><td>idle</td><td class='num'>220s</td><td class='num'>5.2</td><td class='num'><b>40.16</b></td><td class='num'>±0.06</td><td class='num'>40.05</td><td class='num delt'>+0.11</td><td class='num'>3.11</td><td class='num bad'>+1.17</td></tr></table>
+
+<h2>结论</h2>
+<div class="note">
+· <b>5 分钟够用</b>：每段稳态温度误差 ≤1.03℃，可用于建离散阶梯表与反解。<br>
+· <b>3 分钟不够</b>：只能看趋势与量级，不要拿它定控制参数。<br>
+· <b>10 分钟更好一点</b>（0.52℃），但边际收益小；它的真正价值是<b>多一个功率层级</b>，
+  能检验线性/二次项，而 5 分钟只有 2 个满载档，中间档位没法给。<br>
+· 三种计划都<b>不能</b>给出连续模型（power 与温度的关系需要 ≥4 个满载档才能交叉验证），
+  只能给离散阶梯表 —— 但控制律本来也只需要离散档位。
+</div>
+</body></html>

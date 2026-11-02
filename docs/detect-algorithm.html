@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>散热问题检测识别算法 · 通俗图解</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#ffffff; --ink:#1a1a1a; --muted:#666; --line:#e5e5e5;
+    --blue:#378ADD; --red:#E24B4A; --amber:#BA7517; --teal:#1D9E75; --purple:#7F77DD;
+    --blue-bg:#E6F1FB; --red-bg:#FCEBEB; --amber-bg:#FAEEDA; --teal-bg:#E1F5EE; --purple-bg:#EEEDFE;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);margin:0;line-height:1.7}
+  .wrap{max-width:860px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:24px;font-weight:600;margin:0 0 6px}
+  h2{font-size:19px;font-weight:600;margin:40px 0 12px;padding-left:10px;border-left:4px solid var(--blue)}
+  h3{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{color:#333;margin:10px 0}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+  .figure{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;text-align:center}
+  .figure svg{max-width:100%;height:auto}
+  .cap{color:var(--muted);font-size:13px;margin-top:8px;text-align:center}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+  th{background:#f3f3f3;font-weight:600}
+  .tag{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;margin-right:6px}
+  .tag.n1{background:var(--red-bg);color:var(--red)}
+  .tag.n2{background:var(--amber-bg);color:var(--amber)}
+  .tag.n3{background:var(--purple-bg);color:var(--purple)}
+  .tag.n4{background:var(--blue-bg);color:var(--blue)}
+  .tag.ok{background:var(--teal-bg);color:var(--teal)}
+  code{background:#f1f1f1;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Consolas,monospace;font-size:13px}
+  .formula{background:#f7f7f7;border-radius:8px;padding:12px 16px;font-family:"SF Mono",Consolas,monospace;font-size:14px;overflow-x:auto;margin:10px 0}
+  .hl{background:#fff8e1;padding:2px 6px;border-radius:4px}
+  ul,ol{padding-left:22px}
+  li{margin:6px 0}
+  .kv{display:flex;flex-wrap:wrap;gap:8px}
+  .kv b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>散热问题检测识别算法</h1>
+<div class="sub">ThermalPilot · 检测模块 · 5 分钟压测 → 定位故障环节</div>
+
+<div class="card">
+<p>这套算法回答一个问题：<b>一台「满载就 97℃」的机器，到底哪个环节坏了？</b></p>
+<p>答案是靠一个物理模型 + 一棵判定树。整个过程分三步：</p>
+<ol>
+  <li><b>采数据</b>——跑 5 分钟压测，记录温度、功耗、风扇占空比随时间的变化轨迹。</li>
+  <li><b>算特征</b>——把轨迹压成 4 个物理量：<code>R1</code>（硅脂热阻）、<code>R2</code>（散热器到环境热阻）、<code>ΔT</code>（风扇杠杆）、<code>pin</code>（贴墙占比）。</li>
+  <li><b>走判定树</b>——按序比对阈值，定位到具体环节，给出「换硅脂 / 清灰 / 压功率 / 健康」结论。</li>
+</ol>
+</div>
+
+<h2>一、物理模型：一条热路，两个「关卡」</h2>
+<p>把芯片想成一块发热的「热源」，热量要经过<b>两道关卡</b>才能散到空气里：</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 300" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- die -->
+  <rect x="40" y="110" width="120" height="80" rx="10" fill="#FCEBEB" stroke="#E24B4A" stroke-width="0.5"/>
+  <text x="100" y="142" text-anchor="middle" font-size="14" font-weight="600" fill="#791F1F" dominant-baseline="central">芯片 die</text>
+  <text x="100" y="164" text-anchor="middle" font-size="12" fill="#A32D2D" dominant-baseline="central">≈ 97℃（热源）</text>
+
+  <!-- R1 arrow -->
+  <line x1="160" y1="150" x2="250" y2="150" stroke="#E24B4A" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="205" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#A32D2D">R1 硅脂/压装</text>
+  <text x="205" y="172" text-anchor="middle" font-size="11" fill="#888">第一道关卡（坏=换硅脂）</text>
+
+  <!-- heatsink -->
+  <rect x="260" y="110" width="140" height="80" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+  <text x="330" y="142" text-anchor="middle" font-size="14" font-weight="600" fill="#444441" dominant-baseline="central">散热器</text>
+  <text x="330" y="164" text-anchor="middle" font-size="12" fill="#5F5E5A" dominant-baseline="central">铜管 + 鳍片（≈48℃）</text>
+
+  <!-- R2 arrow -->
+  <line x1="400" y1="150" x2="500" y2="150" stroke="#378ADD" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="450" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#185FA5">R2 鳍片/风量</text>
+  <text x="450" y="172" text-anchor="middle" font-size="11" fill="#888">第二道关卡（坏=清灰/风扇）</text>
+
+  <!-- ambient -->
+  <rect x="510" y="110" width="130" height="80" rx="10" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text x="575" y="142" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C" dominant-baseline="central">环境空气</text>
+  <text x="575" y="164" text-anchor="middle" font-size="12" fill="#185FA5" dominant-baseline="central">≈ 24℃（终点）</text>
+
+  <!-- fan -->
+  <g>
+    <circle cx="330" cy="240" r="30" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+    <path d="M330 220 L340 240 L330 260 L320 240 Z" fill="#378ADD" opacity="0.7"/>
+    <path d="M310 240 L330 250 L330 230 Z" fill="#378ADD" opacity="0.7"/>
+    <path d="M350 240 L330 230 L330 250 Z" fill="#378ADD" opacity="0.7"/>
+    <text x="330" y="288" text-anchor="middle" font-size="12" fill="#185FA5">风扇（只影响 R2）</text>
+  </g>
+  <line x1="330" y1="210" x2="330" y2="190" stroke="#888" stroke-width="0.5" stroke-dasharray="3,3"/>
+</svg>
+<div class="cap">图 1 · 两热阻模型：热量串过 R1、R2 两道关卡，风扇只能管第二道</div>
+</div>
+
+<div class="card">
+<p>温度公式很简单：</p>
+<div class="formula">T_die = T_amb + (R1 + R2) × P</div>
+<p><code>P</code> 是功耗，<code>R1</code>、<code>R2</code> 是两道关卡的热阻（单位 K/W，即「每瓦功率抬升多少度」）。</p>
+<p><b>核心洞察</b>：稳态下 <code>R1</code> 和 <code>R2</code> 总是<b>加在一起</b>出现，光看温度根本分不清是谁坏了。就像一条堵车的路，你不知道是「路口 A」堵还是「路口 B」堵。</p>
+</div>
+
+<h2>二、关键一招：怎么把 R1、R2 分开？</h2>
+<p>答案是抓<b>「掉载瞬间」</b>那一下：芯片热容小（1 秒就冷），散热器热容大（100 秒才冷）。压测突然停止时——</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 280" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- axes -->
+  <line x1="60" y1="40" x2="60" y2="240" stroke="#ccc" stroke-width="0.5"/>
+  <line x1="60" y1="240" x2="640" y2="240" stroke="#ccc" stroke-width="0.5"/>
+  <text x="30" y="60" font-size="12" fill="#888" text-anchor="middle">温度</text>
+  <text x="350" y="262" font-size="12" fill="#888" text-anchor="middle">时间</text>
+
+  <!-- drop marker vertical line -->
+  <line x1="360" y1="40" x2="360" y2="240" stroke="#E24B4A" stroke-width="0.5" stroke-dasharray="4,4"/>
+  <text x="360" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#A32D2D">掉载瞬间</text>
+
+  <!-- die temp: high plateau then sharp drop -->
+  <polyline points="60,80 360,80 380,120 400,150 640,185" fill="none" stroke="#E24B4A" stroke-width="2.5"/>
+  <text x="180" y="70" font-size="13" font-weight="600" fill="#A32D2D">芯片温度（1秒级跌落）</text>
+
+  <!-- heatsink temp: slow decay -->
+  <polyline points="60,150 360,150 400,155 460,163 640,180" fill="none" stroke="#378ADD" stroke-width="2.5"/>
+  <text x="470" y="145" font-size="13" font-weight="600" fill="#185FA5">散热器温度（100秒级缓降）</text>
+
+  <!-- gap annotation -->
+  <line x1="380" y1="120" x2="380" y2="152" stroke="#888" stroke-width="0.5"/>
+  <text x="390" y="140" font-size="13" font-weight="600" fill="#333">ΔT：这一瞬间的温差只由 R1 决定</text>
+</svg>
+<div class="cap">图 2 · 掉载瞬间：芯片秒跌、散热器还没动，温差就是 R1 的「指纹」</div>
+</div>
+
+<div class="card">
+<p>掉载后的 1~6 秒里，功率已经掉下去了，但散热器还热着没来得及冷。这一瞬间：</p>
+<div class="formula">R1 = (T_段末 − T_过渡) / (P_段末 − P_过渡)</div>
+<p>这个公式<b>不需要知道环境温度</b>、<b>不受风扇影响</b>，5 分钟就能测准（真机实测 1.76，与手算一致）。有了 R1，剩下的 <code>R2 = Rtot − R1</code> 也就顺势拆出来了。</p>
+<p class="hl">一句话：<b>稳态拆不开，就用「瞬态」拆。</b>这就是整套算法最巧的地方。</p>
+</div>
+
+<h2>三、判定树：四个关卡按序排查</h2>
+<p>特征算出来后，走一棵<b>可解释的判定树</b>，按「硅脂 → 风扇 → 整体 → 电气」的顺序排查：</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 560" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- root -->
+  <rect x="240" y="20" width="200" height="44" rx="8" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+  <text x="340" y="42" text-anchor="middle" font-size="14" font-weight="600" fill="#444441" dominant-baseline="central">计算特征 R1 / R2 / ΔT / pin</text>
+
+  <!-- N1 -->
+  <line x1="300" y1="64" x2="190" y2="100" stroke="#E24B4A" stroke-width="1.5" marker-end="url(#arrow3)"/>
+  <text x="205" y="82" font-size="11" fill="#A32D2D" text-anchor="middle">R1 ≥ 0.8 ?</text>
+  <rect x="60" y="104" width="260" height="56" rx="8" fill="#FCEBEB" stroke="#E24B4A" stroke-width="0.5"/>
+  <text x="190" y="124" text-anchor="middle" font-size="14" font-weight="600" fill="#791F1F" dominant-baseline="central">N1 · TIM 断链（换硅脂）</text>
+  <text x="190" y="144" text-anchor="middle" font-size="12" fill="#A32D2D" dominant-baseline="central">软件无解，只能降功率保命</text>
+
+  <!-- N2 -->
+  <line x1="380" y1="64" x2="470" y2="100" stroke="#BA7517" stroke-width="1.5" marker-end="url(#arrow3)"/>
+  <text x="470" y="82" font-size="11" fill="#854F0B" text-anchor="middle">否</text>
+  <rect x="360" y="104" width="260" height="56" rx="8" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+  <text x="490" y="124" text-anchor="middle" font-size="14" font-weight="600" fill="#633806" dominant-baseline="central">N2 · 风扇/风道（清灰）</text>
+  <text x="490" y="144" text-anchor="middle" font-size="12" fill="#854F0B" dominant-baseline="central">R2 ≥ 0.7 且 ΔT &lt; 6℃</text>
+
+  <!-- N3 -->
+  <line x1="490" y1="160" x2="490" y2="250" stroke="#7F77DD" stroke-width="1.5" marker-end="url(#arrow3)"/>
+  <text x="505" y="210" font-size="11" fill="#534AB7">否 → 看是否贴墙</text>
+  <rect x="360" y="254" width="260" height="56" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text x="490" y="274" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489" dominant-baseline="central">N3 · 整体散热不足</text>
+  <text x="490" y="294" text-anchor="middle" font-size="12" fill="#534AB7" dominant-baseline="central">贴墙 ≥50% 且 R1 正常 → 压功率</text>
+
+  <!-- N4 -->
+  <line x1="490" y1="310" x2="490" y2="400" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow3)"/>
+  <text x="505" y="360" font-size="11" fill="#185FA5">否 → 看功率上不上得去</text>
+  <rect x="360" y="404" width="260" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text x="490" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C" dominant-baseline="central">N4 · 电气功率墙</text>
+  <text x="490" y="444" text-anchor="middle" font-size="12" fill="#185FA5" dominant-baseline="central">P &lt; 设计值×85% 且不贴墙 → 散热无恙</text>
+
+  <!-- healthy -->
+  <line x1="490" y1="460" x2="490" y2="500" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow3)"/>
+  <text x="505" y="485" font-size="11" fill="#0F6E56">否 → 健康</text>
+  <rect x="360" y="504" width="260" height="44" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+  <text x="490" y="526" text-anchor="middle" font-size="14" font-weight="600" fill="#085041" dominant-baseline="central">N5 · 健康</text>
+</svg>
+<div class="cap">图 3 · 判定树：从上到下按序排查，命中即停，输出对应故障环节</div>
+</div>
+
+<div class="card">
+<table>
+  <tr><th>节点</th><th>判据</th><th>结论</th><th>动作</th></tr>
+  <tr><td><span class="tag n1">N1</span></td><td>R1 ≥ 0.8 K/W（≥1.4 重度）</td><td>硅脂/压装断链</td><td>重涂硅脂 / 重压装</td></tr>
+  <tr><td><span class="tag n2">N2</span></td><td>R2 ≥ 0.7 且 ΔT(风扇60→100) &lt; 6℃</td><td>风扇/鳍片/风道</td><td>清灰 / 换风扇 / 疏通风道</td></tr>
+  <tr><td><span class="tag n3">N3</span></td><td>贴墙 ≥50% 且 R1 正常</td><td>整体散热不足</td><td>软件压功率</td></tr>
+  <tr><td><span class="tag n4">N4</span></td><td>P ≤ 0.85×设计功率 且不贴墙</td><td>电气功率墙</td><td>散热无恙，查 PL/供电</td></tr>
+  <tr><td><span class="tag ok">N5</span></td><td>都不命中</td><td>健康</td><td>可做精细优化</td></tr>
+</table>
+<p><b>两个防误判设计</b>（很重要）：</p>
+<ul>
+  <li><b>R2 是主判据、ΔT 只做确认</b>——5 分钟档渐近线外推误差 ±2~3℃，但 R2 误差只有 ±0.1，更可靠。</li>
+  <li><b>贴墙时风扇会被「掩盖」</b>——机器贴着温度墙跑时，加风量温度也不降，会被误判成风扇坏。所以当 <code>pin</code> 高时，N2 自动改报「被掩盖」，先去修 N1/N3。</li>
+</ul>
+</div>
+
+<h2>四、验证结果：40/40 全对</h2>
+<div class="card">
+<p>用 4 个仿真场景（物理参数已知，相当于「标准答案」）+ 真实机器数据，各换 10 个随机噪声种子共 40 次，<b>全部正确分类</b>：</p>
+<table>
+  <tr><th>场景</th><th>R1</th><th>R2</th><th>判定</th></tr>
+  <tr><td>健康（50W 全额释放）</td><td>0.21</td><td>0.53</td><td>✅ 健康</td></tr>
+  <tr><td>风道堵</td><td>0.26</td><td>1.25</td><td>✅ 风扇/鳍片/风道</td></tr>
+  <tr><td>硅脂干涸（真实机参数）</td><td>1.83</td><td>0.14</td><td>✅ TIM 重度</td></tr>
+  <tr><td>电气墙</td><td>0.24</td><td>0.49</td><td>✅ 电气功率墙</td></tr>
+  <tr><td><b>真实 deep1（本机）</b></td><td><b>1.76</b></td><td><b>0.32</b></td><td>✅ <b>TIM 重度 + 温度墙限功率</b></td></tr>
+</table>
+</div>
+
+<h2>五、代码入口</h2>
+<div class="card">
+<div class="formula">from detect import detect
+result = detect("lab-data/xxx.csv", design_w=50, t_amb=24)
+# result = { features: {...}, findings: [...], verdict: "TIM/压装断链（重度）...", scene: "tim_fault" }</div>
+<p>命令行：<code>python tools/detect.py &lt;csv&gt; --design-w 50 --tamb 24 --json</code></p>
+<p>模块纯函数、无副作用，产品运行时可直接 import；<code>scene</code> 字段（<code>tim_fault / fan_fault / overall_weak / power_limit / healthy</code>）直接喂给下一步的三档散热策略引擎。</p>
+</div>
+
+</div>
+</body>
+</html>

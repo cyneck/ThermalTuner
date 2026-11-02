@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>模型选择与策略导出</title><style>
+:root{--ink:#141c26;--dim:#6b7889;--line:#e3e9f1;--bg:#f6f8fb;--acc:#2f7ed8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.6}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:21px;margin:0 0 6px}.sub{color:var(--dim);font-size:13px;margin-bottom:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 12px;padding-left:9px;border-left:3px solid var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--dim);font-weight:600;font-size:12px}td.n{text-align:right;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.kv{background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+.kv span{display:block;font-size:11px;color:var(--dim)}.kv b{font-size:15px}
+.best{background:#eef7ee;font-weight:600}
+</style></head><body><div class="wrap">
+<h1>模型选择与策略导出</h1>
+<div class="sub">lab-demo-nbfc.csv · nbfc 模式 · 生成于 2026-10-28 16:02:41</div>
+
+<div class="card"><h2>结论</h2><div class="grid">
+<div class="kv"><span>采用模型</span><b>二维阶梯网格</b></div>
+<div class="kv"><span>留一 CV RMSE</span><b>2.41 ℃</b></div>
+<div class="kv"><span>MAE</span><b>2.23 ℃</b></div>
+<div class="kv"><span>热时间常数 τ</span><b>52 s</b></div>
+<div class="kv"><span>闭环热阻</span><b>1.096 ℃/W</b></div>
+<div class="kv"><span>稳态阶段数</span><b>9</b></div>
+</div></div>
+
+<div class="card"><h2>模型排行榜（按阶段留一交叉验证，越低越好）</h2>
+<table><thead><tr><th>模型</th><th>RMSE ℃</th><th>MAE ℃</th><th>R²</th></tr></thead>
+<tbody><tr><td>二维阶梯网格</td><td class='n'>2.41</td><td class='n'>2.23</td><td class='n'>0.955</td></tr><tr><td>风扇二次 T=a+(b+c·fan+d·fan²)·P</td><td class='n'>2.66</td><td class='n'>2.32</td><td class='n'>0.945</td></tr><tr><td>神经网络 MLP2D(h=8)</td><td class='n'>2.93</td><td class='n'>2.32</td><td class='n'>0.933</td></tr><tr><td>风扇线性 T=a+(b+c·fan)·P</td><td class='n'>2.99</td><td class='n'>2.57</td><td class='n'>0.93</td></tr><tr><td>线性 T=a+b·P</td><td class='n'>4.54</td><td class='n'>3.97</td><td class='n'>0.84</td></tr><tr><td>二次 T=a+b·P+c·P²</td><td class='n'>4.81</td><td class='n'>4.17</td><td class='n'>0.82</td></tr><tr><td>阶梯表（4 箱）</td><td class='n'>6.1</td><td class='n'>5.34</td><td class='n'>0.711</td></tr><tr><td>均值基线</td><td class='n'>12.76</td><td class='n'>11.04</td><td class='n'>-0.266</td></tr><tr><td>神经网络 MLP(h=6)</td><td class='n'>12.76</td><td class='n'>11.04</td><td class='n'>-0.266</td></tr><tr><td>风扇专用 T=a+b·fan+c·fan²</td><td class='n'>14.19</td><td class='n'>12.58</td><td class='n'>-0.565</td></tr></tbody></table>
+<p class="sub" style="margin:10px 0 0">交叉验证按<strong>阶段</strong>分组留一：同一阶段的相邻样本高度自相关，若按样本随机划分会造成"见过答案"的误差虚低。</p></div>
+
+<div class="card"><h2>控制律阶梯表（Pareto 三档：静音 / 折中 / 性能）</h2>
+<table><thead><tr><th>目标温度</th><th>档位</th><th>频率上限</th><th>风扇</th><th>频率 MHz</th><th>功耗 W</th><th>预测温度</th><th>噪声 ΔdB</th></tr></thead>
+<tbody><tr><td class='n'>≤ 95 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>30%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>89.4</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 90 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>30%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>89.4</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 88 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>45%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>87.3</td><td class='n'>-17.3</td></tr><tr><td class='n'>≤ 88 ℃</td><td>静音优先</td><td class='n'>95%</td><td class='n'>30%</td><td class='n'>3330</td><td class='n'>35.6</td><td class='n'>83.7</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 85 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>60%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>84.3</td><td class='n'>-11.1</td></tr><tr><td class='n'>≤ 85 ℃</td><td>静音优先</td><td class='n'>95%</td><td class='n'>30%</td><td class='n'>3330</td><td class='n'>35.6</td><td class='n'>83.7</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 82 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>70%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.9</td><td class='n'>-7.7</td></tr><tr><td class='n'>≤ 82 ℃</td><td>静音优先</td><td class='n'>90%</td><td class='n'>30%</td><td class='n'>3260</td><td class='n'>31.3</td><td class='n'>78.0</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 80 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>80%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>79.1</td><td class='n'>-4.8</td></tr><tr><td class='n'>≤ 80 ℃</td><td>静音优先</td><td class='n'>90%</td><td class='n'>30%</td><td class='n'>3260</td><td class='n'>31.3</td><td class='n'>78.0</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 78 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>85%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>77.5</td><td class='n'>-3.5</td></tr><tr><td class='n'>≤ 78 ℃</td><td>静音优先</td><td class='n'>90%</td><td class='n'>30%</td><td class='n'>3260</td><td class='n'>31.3</td><td class='n'>78.0</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 75 ℃</td><td>性能优先</td><td class='n'>100%</td><td class='n'>95%</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>74.1</td><td class='n'>-1.1</td></tr><tr><td class='n'>≤ 75 ℃</td><td>静音优先</td><td class='n'>85%</td><td class='n'>30%</td><td class='n'>3190</td><td class='n'>26.9</td><td class='n'>72.3</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 72 ℃</td><td>性能优先</td><td class='n'>95%</td><td class='n'>90%</td><td class='n'>3330</td><td class='n'>35.6</td><td class='n'>71.6</td><td class='n'>-2.3</td></tr><tr><td class='n'>≤ 72 ℃</td><td>静音优先</td><td class='n'>80%</td><td class='n'>30%</td><td class='n'>3120</td><td class='n'>22.3</td><td class='n'>66.4</td><td class='n'>-26.1</td></tr><tr><td class='n'>≤ 70 ℃</td><td>性能优先</td><td class='n'>95%</td><td class='n'>100%</td><td class='n'>3330</td><td class='n'>35.6</td><td class='n'>68.4</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 70 ℃</td><td>静音优先</td><td class='n'>80%</td><td class='n'>30%</td><td class='n'>3120</td><td class='n'>22.3</td><td class='n'>66.4</td><td class='n'>-26.1</td></tr></tbody></table></div>
+
+<div class="card"><h2>稳态特征样本</h2>
+<table><thead><tr><th>阶段</th><th>cap</th><th>P (W)</th><th>fan %</th><th>T ℃</th><th>σ</th></tr></thead>
+<tbody><tr><td>F0</td><td class='n'>100%</td><td class='n'>5.2</td><td class='n'>50</td><td class='n'>39.1</td><td class='n'>0.30</td></tr><tr><td>F1</td><td class='n'>100%</td><td class='n'>40.0</td><td class='n'>90</td><td class='n'>75.1</td><td class='n'>1.29</td></tr><tr><td>F2</td><td class='n'>100%</td><td class='n'>40.0</td><td class='n'>70</td><td class='n'>83.4</td><td class='n'>0.38</td></tr><tr><td>F3</td><td class='n'>80%</td><td class='n'>22.4</td><td class='n'>70</td><td class='n'>64.2</td><td class='n'>0.72</td></tr><tr><td>F4</td><td class='n'>80%</td><td class='n'>22.5</td><td class='n'>90</td><td class='n'>59.7</td><td class='n'>0.33</td></tr><tr><td>F5</td><td class='n'>60%</td><td class='n'>16.8</td><td class='n'>70</td><td class='n'>54.4</td><td class='n'>0.35</td></tr><tr><td>F6</td><td class='n'>60%</td><td class='n'>16.9</td><td class='n'>90</td><td class='n'>52.6</td><td class='n'>0.32</td></tr><tr><td>F7</td><td class='n'>100%</td><td class='n'>40.0</td><td class='n'>50</td><td class='n'>84.4</td><td class='n'>1.13</td></tr><tr><td>F8</td><td class='n'>80%</td><td class='n'>22.3</td><td class='n'>50</td><td class='n'>67.0</td><td class='n'>0.70</td></tr><tr><td>F9</td><td class='n'>60%</td><td class='n'>16.8</td><td class='n'>50</td><td class='n'>57.3</td><td class='n'>0.45</td></tr><tr><td>FZ</td><td class='n'>100%</td><td class='n'>5.2</td><td class='n'>50</td><td class='n'>41.9</td><td class='n'>0.68</td></tr></tbody></table></div>
+</div></body></html>

@@ -1,0 +1,243 @@
+{
+  "csv": "lab-selftest.csv",
+  "generated": "2026-10-28 12:41:47",
+  "samples": 1070,
+  "stages": [
+    {
+      "stage": "S0",
+      "load": 4.0,
+      "cap": 100.0,
+      "boost": 2.0,
+      "n": 40,
+      "T": 44.82,
+      "T_std": 0.36,
+      "T_max": 45.6,
+      "Tcore": 46.3,
+      "P": 5.0,
+      "f": 800.0,
+      "V": 0.75,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S1",
+      "load": 100.0,
+      "cap": 35.0,
+      "boost": 2.0,
+      "n": 58,
+      "T": 48.58,
+      "T_std": 0.36,
+      "T_max": 49.5,
+      "Tcore": 50.1,
+      "P": 9.03,
+      "f": 1050.0,
+      "V": 0.78,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S2",
+      "load": 100.0,
+      "cap": 50.0,
+      "boost": 2.0,
+      "n": 58,
+      "T": 53.3,
+      "T_std": 0.35,
+      "T_max": 54.3,
+      "Tcore": 54.8,
+      "P": 14.0,
+      "f": 1400.0,
+      "V": 0.86,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S3",
+      "load": 100.0,
+      "cap": 65.0,
+      "boost": 2.0,
+      "n": 58,
+      "T": 59.02,
+      "T_std": 0.38,
+      "T_max": 59.9,
+      "Tcore": 60.5,
+      "P": 20.01,
+      "f": 1820.0,
+      "V": 0.94,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S4",
+      "load": 100.0,
+      "cap": 80.0,
+      "boost": 2.0,
+      "n": 58,
+      "T": 66.64,
+      "T_std": 0.33,
+      "T_max": 67.3,
+      "Tcore": 68.1,
+      "P": 27.95,
+      "f": 2400.0,
+      "V": 1.02,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S5",
+      "load": 100.0,
+      "cap": 100.0,
+      "boost": 2.0,
+      "n": 90,
+      "T": 77.98,
+      "T_std": 0.38,
+      "T_max": 78.9,
+      "Tcore": 79.5,
+      "P": 39.86,
+      "f": 3200.0,
+      "V": 1.1,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S6",
+      "load": 100.0,
+      "cap": 100.0,
+      "boost": 0.0,
+      "n": 58,
+      "T": 71.43,
+      "T_std": 0.35,
+      "T_max": 72.4,
+      "Tcore": 72.9,
+      "P": 32.98,
+      "f": 2800.0,
+      "V": 1.05,
+      "rpm": 0.0,
+      "steady": true
+    },
+    {
+      "stage": "S7",
+      "load": 4.0,
+      "cap": 100.0,
+      "boost": 2.0,
+      "n": 58,
+      "T": 40.98,
+      "T_std": 0.47,
+      "T_max": 41.9,
+      "Tcore": 42.5,
+      "P": 5.0,
+      "f": 800.0,
+      "V": 0.75,
+      "rpm": 0.0,
+      "steady": true
+    }
+  ],
+  "warnings": [],
+  "model_T_from_P": {
+    "a": 39.94,
+    "b": 0.954,
+    "r2": 1.0,
+    "se_b": 0.001,
+    "note": "b = 闭环热阻（BIOS 风扇曲线参与）℃，每瓦升温度数"
+  },
+  "model_P_from_f": {
+    "c": 0.001045,
+    "alpha": 1.308,
+    "r2": 0.997,
+    "note": "P=c·f^α；α>1 说明降频对功耗/温度是超线性的（越降越赚）"
+  },
+  "model_power_physics": {
+    "C_eff_mean": 12045.711,
+    "C_eff_cv": 0.131,
+    "note": "P/(V²·f) 近似常数则说明 P=C·V²·f 成立；CV 越小模型越可信"
+  },
+  "model_T_from_cap": {
+    "linear": {
+      "a": 33.23,
+      "b": 0.413,
+      "r2": 0.962
+    },
+    "quadratic": {
+      "a": 37.54,
+      "b": 0.272,
+      "c": 0.001011,
+      "r2": 0.964
+    },
+    "note": "b 为每 1% 频率上限的温度变化，负值表示降频降温"
+  },
+  "cooldown": {
+    "tau_s": 76.0,
+    "r2": 0.924,
+    "asymptote": 39.6,
+    "note": "热时间常数；控制周期/斜率限速应与之匹配（约 τ/4）"
+  },
+  "turbo_effect": {
+    "delta_T": -6.55,
+    "delta_P": -6.88,
+    "note": "关闭 Turbo 后满载温度/功耗变化（同 cap=100%）"
+  },
+  "effects": [
+    {
+      "factor": "CPU 频率上限（cap）",
+      "range": "100% → 35%",
+      "delta_T": -29.4,
+      "per_unit": -0.452,
+      "unit": "℃ / 1% cap",
+      "measured": true
+    },
+    {
+      "factor": "Turbo Boost（关 vs 开）",
+      "range": "cap=100% 下切换",
+      "delta_T": -6.55,
+      "per_unit": -6.55,
+      "unit": "℃",
+      "measured": true
+    },
+    {
+      "factor": "风扇转速/占空比",
+      "range": "本机不可控（EC 固件）",
+      "delta_T": null,
+      "per_unit": null,
+      "unit": "℃",
+      "measured": false
+    },
+    {
+      "factor": "核心电压（降压 UV）",
+      "range": "本轮未纳入",
+      "delta_T": null,
+      "per_unit": null,
+      "unit": "℃",
+      "measured": false
+    }
+  ],
+  "control_law": [
+    {
+      "target": 85,
+      "cap_needed": 100.0,
+      "est_T": 74.9,
+      "note": "满上限时模型预测仅 74.9℃，无需限频"
+    },
+    {
+      "target": 80,
+      "cap_needed": 100.0,
+      "est_T": 74.9,
+      "note": "满上限时模型预测仅 74.9℃，无需限频"
+    },
+    {
+      "target": 75,
+      "cap_needed": 100.0,
+      "est_T": 74.9,
+      "note": "满上限时模型预测仅 74.9℃，无需限频"
+    },
+    {
+      "target": 70,
+      "cap_needed": 89.5,
+      "est_T": 70.0
+    }
+  ],
+  "quality": {
+    "steady_stages": 6,
+    "load_stages": 6,
+    "rpm_available": false
+  }
+}

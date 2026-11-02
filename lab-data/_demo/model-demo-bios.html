@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>模型选择与策略导出</title><style>
+:root{--ink:#141c26;--dim:#6b7889;--line:#e3e9f1;--bg:#f6f8fb;--acc:#2f7ed8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.6}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:21px;margin:0 0 6px}.sub{color:var(--dim);font-size:13px;margin-bottom:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 12px;padding-left:9px;border-left:3px solid var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--dim);font-weight:600;font-size:12px}td.n{text-align:right;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.kv{background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+.kv span{display:block;font-size:11px;color:var(--dim)}.kv b{font-size:15px}
+.best{background:#eef7ee;font-weight:600}
+</style></head><body><div class="wrap">
+<h1>模型选择与策略导出</h1>
+<div class="sub">lab-demo-bios.csv · bios 模式 · 生成于 2026-10-28 16:02:31</div>
+
+<div class="card"><h2>结论</h2><div class="grid">
+<div class="kv"><span>采用模型</span><b>线性 T=a+b·P</b></div>
+<div class="kv"><span>留一 CV RMSE</span><b>2.74 ℃</b></div>
+<div class="kv"><span>MAE</span><b>1.84 ℃</b></div>
+<div class="kv"><span>热时间常数 τ</span><b>60 s</b></div>
+<div class="kv"><span>闭环热阻</span><b>1.148 ℃/W</b></div>
+<div class="kv"><span>稳态阶段数</span><b>6</b></div>
+</div></div>
+
+<div class="card"><h2>模型排行榜（按阶段留一交叉验证，越低越好）</h2>
+<table><thead><tr><th>模型</th><th>RMSE ℃</th><th>MAE ℃</th><th>R²</th></tr></thead>
+<tbody><tr><td>线性 T=a+b·P</td><td class='n'>2.74</td><td class='n'>1.84</td><td class='n'>0.94</td></tr><tr><td>神经网络 MLP(h=6)</td><td class='n'>3.02</td><td class='n'>2.09</td><td class='n'>0.927</td></tr><tr><td>二次 T=a+b·P+c·P²</td><td class='n'>3.79</td><td class='n'>2.44</td><td class='n'>0.885</td></tr><tr><td>阶梯表（4 箱）</td><td class='n'>8.87</td><td class='n'>7.32</td><td class='n'>0.37</td></tr><tr><td>均值基线</td><td class='n'>13.41</td><td class='n'>11.31</td><td class='n'>-0.44</td></tr></tbody></table>
+<p class="sub" style="margin:10px 0 0">交叉验证按<strong>阶段</strong>分组留一：同一阶段的相邻样本高度自相关，若按样本随机划分会造成"见过答案"的误差虚低。</p></div>
+
+<div class="card"><h2>控制律阶梯表（Pareto 三档：静音 / 折中 / 性能）</h2>
+<table><thead><tr><th>目标温度</th><th>档位</th><th>频率上限</th><th>风扇</th><th>频率 MHz</th><th>功耗 W</th><th>预测温度</th><th>噪声 ΔdB</th></tr></thead>
+<tbody><tr><td class='n'>≤ 95 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>100%</td><td class='n'>BIOS</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 90 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>100%</td><td class='n'>BIOS</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 88 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>100%</td><td class='n'>BIOS</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 85 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>100%</td><td class='n'>BIOS</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 82 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>100%</td><td class='n'>BIOS</td><td class='n'>3400</td><td class='n'>40.0</td><td class='n'>81.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 80 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>95%</td><td class='n'>BIOS</td><td class='n'>3305</td><td class='n'>35.6</td><td class='n'>76.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 78 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>95%</td><td class='n'>BIOS</td><td class='n'>3305</td><td class='n'>35.6</td><td class='n'>76.8</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 75 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>90%</td><td class='n'>BIOS</td><td class='n'>3210</td><td class='n'>31.2</td><td class='n'>71.7</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 72 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>90%</td><td class='n'>BIOS</td><td class='n'>3210</td><td class='n'>31.2</td><td class='n'>71.7</td><td class='n'>+0.0</td></tr><tr><td class='n'>≤ 70 ℃</td><td>唯一（风扇由固件控制）</td><td class='n'>85%</td><td class='n'>BIOS</td><td class='n'>3115</td><td class='n'>26.8</td><td class='n'>66.7</td><td class='n'>+0.0</td></tr></tbody></table></div>
+
+<div class="card"><h2>稳态特征样本</h2>
+<table><thead><tr><th>阶段</th><th>cap</th><th>P (W)</th><th>fan %</th><th>T ℃</th><th>σ</th></tr></thead>
+<tbody><tr><td>S0</td><td class='n'>100%</td><td class='n'>5.2</td><td class='n'>0</td><td class='n'>40.0</td><td class='n'>0.31</td></tr><tr><td>S1</td><td class='n'>35%</td><td class='n'>11.1</td><td class='n'>0</td><td class='n'>47.6</td><td class='n'>0.46</td></tr><tr><td>S2</td><td class='n'>50%</td><td class='n'>14.4</td><td class='n'>0</td><td class='n'>52.3</td><td class='n'>0.38</td></tr><tr><td>S3</td><td class='n'>65%</td><td class='n'>18.2</td><td class='n'>0</td><td class='n'>56.9</td><td class='n'>0.37</td></tr><tr><td>S4</td><td class='n'>80%</td><td class='n'>22.4</td><td class='n'>0</td><td class='n'>61.7</td><td class='n'>0.36</td></tr><tr><td>S5</td><td class='n'>100%</td><td class='n'>40.0</td><td class='n'>0</td><td class='n'>80.3</td><td class='n'>0.46</td></tr><tr><td>S6</td><td class='n'>100%</td><td class='n'>28.7</td><td class='n'>0</td><td class='n'>71.4</td><td class='n'>0.47</td></tr><tr><td>S7</td><td class='n'>100%</td><td class='n'>5.2</td><td class='n'>0</td><td class='n'>46.3</td><td class='n'>0.94</td></tr></tbody></table></div>
+</div></body></html>

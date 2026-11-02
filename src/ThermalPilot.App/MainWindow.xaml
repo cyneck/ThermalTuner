@@ -1,0 +1,1259 @@
+<Window x:Class="ThermalPilot.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ThermalPilot.App"
+        Title="ThermalPilot · 温控与调频"
+        Height="820" Width="1180" MinHeight="700" MinWidth="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="#0F131A" Foreground="#D7E1EC"
+        FontFamily="Microsoft YaHei UI" FontSize="12.5"
+        Icon="Icon.ico">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="CardBg" Color="#141A24" />
+        <SolidColorBrush x:Key="CardBorder" Color="#1E2733" />
+        <SolidColorBrush x:Key="Muted" Color="#7D8A9A" />
+        <SolidColorBrush x:Key="Accent" Color="#5AC8FA" />
+        <SolidColorBrush x:Key="Warn" Color="#F0A33C" />
+        <SolidColorBrush x:Key="Danger" Color="#F05B5B" />
+        <SolidColorBrush x:Key="Ok" Color="#6ED38C" />
+
+        <!-- 深色滚动条：WPF 默认滚动条是浅色系统样式，长面板上一拉就出现一条"白条"，
+             在深色界面里非常刺眼。这里只做最小可用实现（轨道透明 + 圆角滑块）。 -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="9" />
+            <Setter Property="MinWidth" Value="9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" Opacity="0" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="#33414F" CornerRadius="4" Margin="1,0" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" Opacity="0" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="MinWidth" Value="0" />
+                    <Setter Property="Height" Value="9" />
+                    <Setter Property="MinHeight" Value="9" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Grid Background="Transparent">
+                                    <Track x:Name="PART_Track">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Command="ScrollBar.PageLeftCommand" Focusable="False" Opacity="0" />
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb>
+                                                <Thumb.Template>
+                                                    <ControlTemplate TargetType="Thumb">
+                                                        <Border Background="#33414F" CornerRadius="4" Margin="0,1" />
+                                                    </ControlTemplate>
+                                                </Thumb.Template>
+                                            </Thumb>
+                                        </Track.Thumb>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Command="ScrollBar.PageRightCommand" Focusable="False" Opacity="0" />
+                                        </Track.IncreaseRepeatButton>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 配置档表格的单元格样式：自定义项用橙色，锁定项灰掉 -->
+        <Style x:Key="ProfileCell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="#CBD6E2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+        <Style x:Key="ProfileFlagCell" TargetType="TextBlock" BasedOn="{StaticResource ProfileCell}">
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverride}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Warn}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                    <Setter Property="Foreground" Value="#5C6878" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 卡片标题（配合 ⓘ 图标把长说明收进悬浮提示） -->
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#EAF1F8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- 说明图标：鼠标停上去才展开长文，默认界面保持安静 -->
+        <Style x:Key="InfoIcon" TargetType="TextBlock">
+            <Setter Property="Text" Value="ⓘ" />
+            <Setter Property="Foreground" Value="#5F6E80" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Cursor" Value="Help" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <!-- 长文要读得完，别 5 秒就消失 -->
+            <Setter Property="ToolTipService.ShowDuration" Value="120000" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="250" />
+        </Style>
+
+        <!-- 可读的悬浮说明：给「值」用的（不占版面，但随时能问） -->
+        <Style x:Key="Hinted" TargetType="TextBlock">
+            <Setter Property="ToolTipService.ShowDuration" Value="120000" />
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+
+        <Style x:Key="Btn" TargetType="Button">
+            <Setter Property="Background" Value="#1A2330" />
+            <Setter Property="Foreground" Value="#D7E1EC" />
+            <Setter Property="BorderBrush" Value="#26313F" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" CornerRadius="7" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#23303F" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#2C3D50" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BtnAccent" TargetType="Button" BasedOn="{StaticResource Btn}">
+            <Setter Property="Background" Value="#17608C" />
+            <Setter Property="BorderBrush" Value="#1E7EB4" />
+            <Setter Property="Foreground" Value="#EAF6FF" />
+        </Style>
+
+        <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource Btn}">
+            <Setter Property="Background" Value="#7A2E2E" />
+            <Setter Property="BorderBrush" Value="#A03B3B" />
+            <Setter Property="Foreground" Value="#FFEAEA" />
+        </Style>
+
+        <Style x:Key="NavItem" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" CornerRadius="7" Padding="14,7" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#16283A" />
+                                <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#151E28" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#10161F" />
+            <Setter Property="Foreground" Value="#E6EEF7" />
+            <Setter Property="BorderBrush" Value="#26313F" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="CaretBrush" Value="#E6EEF7" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#C7D3DF" />
+            <Setter Property="Margin" Value="0,7,0,0" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+
+        <Style TargetType="Expander">
+            <Setter Property="Foreground" Value="#EAF1F8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#1A2330" />
+            <Setter Property="Foreground" Value="#D7E1EC" />
+            <Setter Property="BorderBrush" Value="#26313F" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Width" Value="110" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="bd" CornerRadius="7" Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                                            <Path Data="M 0 0 L 4 4 L 8 0" Stroke="#8B98A8" StrokeThickness="1.5"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,9,0" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="bd" Property="Background" Value="#23303F" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              Margin="10,0,24,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+                            <Popup IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True"
+                                   Placement="Bottom" StaysOpen="False" PopupAnimation="Fade">
+                                <Border Background="#161D27" BorderBrush="#26313F" BorderThickness="1" CornerRadius="8"
+                                        Padding="4" MinWidth="{TemplateBinding ActualWidth}" Margin="0,4,8,8">
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="#D7E1EC" />
+                        <Setter Property="Padding" Value="10,7" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="bd" CornerRadius="5" Padding="{TemplateBinding Padding}" Background="Transparent">
+                                        <ContentPresenter VerticalAlignment="Center" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="bd" Property="Background" Value="#1E3A50" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="GridLinesVisibility" Value="None" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="Foreground" Value="#D7E1EC" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#101720" />
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#D7E1EC" />
+            <Setter Property="Padding" Value="10,7" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#17364A" />
+                    <Setter Property="Foreground" Value="#EAF6FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶栏 -->
+        <Border Grid.Row="0" Background="#111823" BorderBrush="#1E2733" BorderThickness="0,0,0,1" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
+                    <Border Width="26" Height="26" CornerRadius="7" Background="#16283A" Margin="0,0,9,0">
+                        <TextBlock Text="✳" Foreground="{StaticResource Accent}" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="ThermalPilot" FontSize="14.5" FontWeight="SemiBold" Foreground="#EAF1F8" />
+                        <TextBlock Text="温度闭环 · 风扇调速 · 降频降压" FontSize="10.5" Foreground="{StaticResource Muted}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton x:Name="NavDash" Content="仪表盘" Style="{StaticResource NavItem}" IsChecked="True" Checked="Nav_Checked" />
+                    <RadioButton x:Name="NavStrategy" Content="① 策略" Style="{StaticResource NavItem}" Checked="Nav_Checked" />
+                    <RadioButton x:Name="NavCalib" Content="② 标定" Style="{StaticResource NavItem}" Checked="Nav_Checked" />
+                    <RadioButton x:Name="NavAdvanced" Content="③ 高级" Style="{StaticResource NavItem}" Checked="Nav_Checked" />
+                    <RadioButton x:Name="NavDiag" Content="诊断 / 检测" Style="{StaticResource NavItem}" Checked="Nav_Checked" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="环境检测" Style="{StaticResource BtnAccent}" Margin="0" Click="BtnCheck_Click" />
+                    <TextBlock Text="生效" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,6,0" />
+                    <Border Background="#101720" BorderBrush="#26313F" BorderThickness="1" CornerRadius="6" Padding="9,4" VerticalAlignment="Center">
+                        <TextBlock x:Name="ProfileChip" Text="● 均衡" Foreground="{StaticResource Accent}"
+                                   FontSize="12" Style="{StaticResource Hinted}"
+                                   ToolTip="当前已应用的全局取向。要改请到「① 策略」页" />
+                    </Border>
+                    <Button x:Name="BtnRun" Content="■ 停止" Style="{StaticResource Btn}" Click="BtnRun_Click" />
+                    <Button x:Name="BtnPause" Content="暂停" Style="{StaticResource Btn}" Click="BtnPause_Click" />
+                    <Button Content="还原系统默认" Style="{StaticResource BtnDanger}" Click="BtnRestore_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 指标卡：风扇只留一个数（本机 EC 不提供转速，能读到的占空比只是 NBFC 上次下发的值，
+             和我们的指令同义，并排显示两个「一样」的数字只会误导） -->
+        <UniformGrid Grid.Row="1" Rows="1" Columns="5" Margin="16,12,16,6">
+            <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock Text="CPU 温度" Foreground="{StaticResource Muted}" FontSize="11.5"
+                               ToolTip="取 **CPU Package**（AMD 为 Tdie/Tctl），与任务管理器、OMEN Hub 同口径。&#10;&#10;大数字报的是「整包温度」。最热单核（Core Max）通常比它高 1~3℃，只放在悬浮里作参考——拿最热单核当主指标，看起来就会比 OEM 工具高。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="CpuTempText" Text="--" FontSize="28" FontWeight="Light" Foreground="#EAF1F8" />
+                        <TextBlock Text=" °C" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="2,0,0,6" />
+                    </StackPanel>
+                    <TextBlock x:Name="CpuSubText" Text="负载 --%" Foreground="{StaticResource Muted}" FontSize="11" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock Text="GPU 温度" Foreground="{StaticResource Muted}" FontSize="11.5"
+                               ToolTip="取 **GPU Core**（核心温度），与任务管理器/OMEN Hub 同口径。&#10;&#10;NVIDIA 驱动还提供「GPU Hot Spot」（热点/结温），通常比核心高 8~12℃。热点只放在副标题里作参考——拿它当「GPU 温度」，即使显卡空闲也会比 OEM 工具高 8~12℃。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="GpuTempText" Text="--" FontSize="28" FontWeight="Light" Foreground="#EAF1F8" />
+                        <TextBlock Text=" °C" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="2,0,0,6" />
+                    </StackPanel>
+                    <TextBlock x:Name="GpuSubText" Text="负载 --%" Foreground="{StaticResource Muted}" FontSize="11" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock x:Name="FreqTitleText" Text="CPU 频率" Foreground="{StaticResource Muted}" FontSize="11.5"
+                               ToolTip="大数字是「当前频率」，与任务管理器「性能 → CPU → 速度」同口径：&#10;  任务管理器的 Speed = Processor Frequency 计数器 = %Processor Performance × 最高频率，而 %Processor Performance 就是 APERF/MPERF 的比率（MPERF 只在核心醒着时推进）。&#10;&#10;同一份计数器还能算出另一个量「有效频率」= ΔAPERF / 墙钟时间，把休眠时间也摊进分母 —— 空闲时它只有 1GHz 出头，代表「实际交付了多少时钟」。两个都不错，只是回答不同问题：当前频率 = 跑多快，有效频率 = 真干了多少活。&#10;&#10;悬停副标题可看到当前三个口径（当前 / 有效 / 瞬时倍频）与限制原因。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="FreqText" Text="--" FontSize="28" FontWeight="Light" Foreground="#EAF1F8" />
+                        <TextBlock Text=" MHz" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="2,0,0,6" />
+                    </StackPanel>
+                    <TextBlock x:Name="FreqSubText" Text="上限 --%" Foreground="{StaticResource Muted}" FontSize="11" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock Text="内存占用" Foreground="{StaticResource Muted}" FontSize="11.5"
+                               ToolTip="物理内存占用率 = 已用 / 总量，口径与任务管理器一致（GlobalMemoryStatusEx：已用 = 总量 − 可用）。&#10;&#10;不采用监控库的 Memory Used：那有几个不同口径（已提交/工作集/物理），彼此差很多，与系统面板对不上时无法解释。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="RamText" Text="--" FontSize="28" FontWeight="Light" Foreground="#EAF1F8" />
+                        <TextBlock Text=" %" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="2,0,0,6" />
+                    </StackPanel>
+                    <TextBlock x:Name="RamSubText" Text="-- / -- GB" Foreground="{StaticResource Muted}" FontSize="11" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="风扇" x:Name="FanTitleText" Foreground="{StaticResource Muted}" FontSize="11.5"
+                               ToolTip="只显示一个数：有转速传感器就是转速；没有就是下发占空比。&#10;&#10;本机 EC 固件不提供转速（FG 测速）信号，所以这里的百分比是**指令值**，不是测量值。副标题会标明它是否已确认落到风扇后端。" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="FanText" Text="--" FontSize="28" FontWeight="Light" Foreground="#EAF1F8" />
+                        <TextBlock x:Name="FanUnitText" Text=" %" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="2,0,0,6" />
+                    </StackPanel>
+                    <TextBlock x:Name="FanSubText" Text="EC 固件管理" Foreground="{StaticResource Muted}" FontSize="11" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- 内容区 -->
+        <Grid Grid.Row="2" Margin="16,6,16,6">
+
+            <!-- 仪表盘 -->
+            <Grid x:Name="PanelDashboard">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,10,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="温度趋势（最近 2 分钟）" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,6" />
+                            <local:LineChart x:Name="TempChart" />
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="风扇输出 / 频率上限（最近 2 分钟）" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,6" />
+                            <local:LineChart x:Name="CtrlChart" />
+                        </DockPanel>
+                    </Border>
+                </Grid>
+                <Grid Grid.Row="1" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2.85*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 谁在烧电：温度只是结果，推动它的是某个进程在持续吃 CPU -->
+                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,10,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="高负载进程 Top 10" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="排序优先级（按你指定的）：① 功耗 ② CPU ③ 内存 ④ 磁盘 IO。&#10;&#10;各列口径：&#10;· 功耗 —— **分摊估算**：整机包功率 × 该程序的 CPU 时间份额。RAPL 只给整颗 CPU 的功率，硬件上不存在「每进程功耗」这种计数器；份额之和等于整机使用率，所以合计会小于包功率，差额是空闲/核显/uncore。&#10;· CPU% —— 占整机百分比，与任务管理器同口径（全核跑满 = 100%，单线程满载在 8 核机上是 12.5%）。&#10;· 内存 —— 工作集合计；同名进程会重复计共享页，所以偏高，看相对值。&#10;· 磁盘IO —— 逻辑读写（缓存命中也算），不等于物理磁盘吞吐。&#10;&#10;同名进程已合并：Chrome/Edge 会把一页拆成几十个进程，不合并的话第一名永远是某个 3% 的 renderer，真正的大头反而被摊薄。悬浮某一行可看 PID 列表。&#10;&#10;橙色标出的是 IO 偏高（>5MB/s）的行 —— 按确定的优先级它们可能排在后面，颜色是提醒你别漏掉。" />
+                                <TextBlock x:Name="ProcSumText" Text="" Foreground="{StaticResource Muted}"
+                                           FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </StackPanel>
+
+                            <Grid Margin="0,9,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition Width="58" />
+                                    <ColumnDefinition Width="54" />
+                                    <ColumnDefinition Width="66" />
+                                    <ColumnDefinition Width="72" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="程序" Foreground="#6B7A8C" FontSize="10.5" />
+                                <TextBlock Grid.Column="1" Text="实例" Foreground="#6B7A8C" FontSize="10.5" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Column="2" Text="功耗 W" Foreground="#6B7A8C" FontSize="10.5" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Column="3" Text="CPU %" Foreground="#6B7A8C" FontSize="10.5" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Column="4" Text="内存 MB" Foreground="#6B7A8C" FontSize="10.5" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Column="5" Text="磁盘 MB/s" Foreground="#6B7A8C" FontSize="10.5" HorizontalAlignment="Right" />
+                            </Grid>
+
+                            <ItemsControl x:Name="ProcList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding RowBg}" CornerRadius="3" Height="23" ToolTip="{Binding Detail}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="36" />
+                                                    <ColumnDefinition Width="58" />
+                                                    <ColumnDefinition Width="54" />
+                                                    <ColumnDefinition Width="66" />
+                                                    <ColumnDefinition Width="72" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#DCE6F0" FontSize="11.5"
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Text="{Binding InstancesText}" Foreground="#6B7A8C" FontSize="11"
+                                                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2" Text="{Binding PowerText}" Foreground="{Binding PowerBrush}" FontSize="11.5"
+                                                           FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3" Text="{Binding CpuText}" Foreground="#C7D3DF" FontSize="11.5"
+                                                           FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="4" Text="{Binding MemText}" Foreground="#9FB0C2" FontSize="11.5"
+                                                           FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="5" Text="{Binding IoText}" Foreground="{Binding IoBrush}" FontSize="11.5"
+                                                           FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock x:Name="ProcEmptyText" Text="等待第一次采样…" Foreground="{StaticResource Muted}"
+                                       FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                            <!-- 图例：颜色不是装饰，是"按优先级排序会漏掉的东西"的补偿 -->
+                            <TextBlock Foreground="#5F6E80" FontSize="10.5" Margin="0,8,0,0" TextWrapping="Wrap"
+                                       Text="橙色 = 该项数值偏高（功耗 ≥2W / IO ≥5MB/s）　·　悬浮任意一行看 PID 与口径　·　每 2 秒刷新" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 风扇通道：本机通常只有 0–1 行，压到右窄列，把版面让给进程表 -->
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="风扇通道" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="每个可读通道的转速与输出。本机（HP OMEN 15）EC 固件不提供转速，只能读到占空比，因此这里往往只有一行或为空 —— 不是程序没读到，是硬件没有这个传感器。" />
+                            </StackPanel>
+                            <ItemsControl x:Name="FanList" Margin="0,8,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Height="21" ToolTip="{Binding Tip}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="46" />
+                                                <ColumnDefinition Width="40" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#DCE6F0" FontSize="11.5"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="{Binding RpmText}" Foreground="#9FB0C2" FontSize="11"
+                                                       FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding OutText}" Foreground="#9FB0C2" FontSize="11"
+                                                       FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="FanEmptyText" Text="无可用通道" Foreground="{StaticResource Muted}"
+                                       FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" LineHeight="17" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- 策略：全局参数的唯一修改入口 -->
+            <ScrollViewer x:Name="PanelStrategy" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="① 取向" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="全程序只有这一处能改取向：选定后把一组推荐值一次性写进草稿，你可以再逐项手改，点底部「应用」才写入硬件；标定页与高级页只显示、不提供选择。&#10;&#10;语义：温度是「上限」不是「要压到的目标」。性能档上限最高（90℃）是因为它风扇最猛、热阻最小 —— 只有「上限高 + 满转速」，功率预算 (上限−室温)/R 才最大。静音与均衡共用 88℃ 上限，只靠风扇 / EPP / PL2 / τ 区分，所以「想安静」不会顺带把性能削掉。&#10;&#10;点「应用」之后，你的手改会作为**增量**随应用一起持久化（顶栏显示「静音 · 自定义」），逐项明细在「③ 高级 → ⓪ 当前配置档」。内置基线本身不可改，程序升级后没被你改过的项会自动跟随新基线。" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <ComboBox x:Name="ProfileCombo" Width="120" SelectionChanged="ProfileCombo_SelectionChanged" />
+                                <Button Content="回到预设" Style="{StaticResource Btn}" Click="BtnReapplyProfile_Click"
+                                        ToolTip="把该取向的推荐值重新写进草稿，清空你对温度上限 / 风扇上限 / EPP / τ / PL2 / 曲线的手改（只进草稿，点「应用」才生效）" />
+                            </StackPanel>
+                            <TextBlock x:Name="StrategyDerivedText" Text="" TextWrapping="Wrap" Margin="0,10,0,0"
+                                       Foreground="{StaticResource Accent}" FontSize="11.5" />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="2*" />
+                        </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,10,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="② 全局边界" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="这四个值是功率预算的分子与热阻的变量，改它们会同时影响所有控制通道。&#10;&#10;功率预算 = (温度上限 − 室温) / (R1 + R2)。把上限压低，预算会同步变小 —— 想更快就把上限提高，想更凉就把上限压低，二者不可兼得。" />
+                            </StackPanel>
+                            <WrapPanel Margin="0,10,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8">
+                                    <TextBlock Text="温度上限" Width="66" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="AutoTargetBox" Width="60" Text="88" TextChanged="GlobalParam_Changed" />
+                                    <TextBlock Text="℃" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="4,0,0,0" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8">
+                                    <TextBlock Text="室温" Width="42" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="AmbientBox" Width="60" Text="24" TextChanged="GlobalParam_Changed" />
+                                    <TextBlock Text="℃" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="4,0,0,0" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8">
+                                    <TextBlock Text="风扇上限" Width="66" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="FanMaxBox" Width="60" Text="75" TextChanged="GlobalParam_Changed" />
+                                    <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="4,0,0,0" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8">
+                                    <TextBlock Text="风扇下限" Width="66" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="FanMinBox" Width="60" Text="20" TextChanged="GlobalParam_Changed" />
+                                    <TextBlock Text="%" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="4,0,0,0" />
+                                </StackPanel>
+                            </WrapPanel>
+                            <TextBlock x:Name="BudgetText" Text="" TextWrapping="Wrap"
+                                       Foreground="{StaticResource Ok}" FontSize="11.5" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="③ 控制通道" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="同一时刻只允许一个通道拥有 CPU 频率的控制权。&#10;&#10;多套控制器同时写同一组寄存器会互相覆盖，结果就是「温度升了、功率升了、频率反而降了」。选中一个通道，其余自动关闭。" />
+                            </StackPanel>
+                            <ComboBox x:Name="ChannelBox" Margin="0,10,0,0" HorizontalAlignment="Left" MinWidth="220"
+                                      SelectionChanged="ChannelBox_SelectionChanged">
+                                <ComboBoxItem x:Name="ChanMsrItem" Content="MSR 精细调控（推荐）" />
+                                <ComboBoxItem Content="电源计划限频（PROCTHROTTLEMAX）" />
+                                <ComboBoxItem Content="实测策略模型查表" />
+                            </ComboBox>
+                            <TextBlock x:Name="ChannelHint" Text="" TextWrapping="Wrap"
+                                       Foreground="{StaticResource Muted}" FontSize="11" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+                    </Grid>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="④ 参数校验" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="下面这些边界不是产品偏好，是硬件机理：τ 在 MSR 0x610 里是 log2 编码只能取 2 的幂、EPP 是 8 位字段、TJmax 100℃、PL2 必须 ≥ PL1、睿频不得超过芯片 0x1AD 原值……&#10;&#10;另有预测型约束：用在线估计的热阻算 T稳态 = 室温 + R·PL1，超过 95℃ 直接阻断（加功率只换来更高温度，频率不会涨），超过温度上限则警告。有「阻断」时点「应用」会被拒绝，不会写进硬件。" />
+                            </StackPanel>
+                            <TextBlock x:Name="ValidationText" Text="✓ 全部通过机理约束校验" TextWrapping="Wrap" Margin="0,10,0,0"
+                                       FontFamily="Consolas" FontSize="11.5" Foreground="{StaticResource Ok}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 自动标定 -->
+            <ScrollViewer x:Name="PanelCalibration" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="自动标定" Style="{StaticResource CardTitle}" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="过程：空闲基线 → 满载（不同频率上限）→ 满载（不同风扇输出）→ 冷却。程序记录稳态温度，用最小二乘拟合「降频收益」与「散热能力」两个一阶热模型，再按全局取向的偏好反解出曲线。&#10;&#10;默认 Windows 10 / 11，需管理员。产出的曲线只写进草稿，仍要点底部「应用」才生效。" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="时长" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,8,0" />
+                                <ComboBox x:Name="LevelCombo" SelectionChanged="LevelCombo_SelectionChanged" />
+                                <TextBlock x:Name="LevelHint" Text="" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" Margin="10,0,0,0" />
+                            </StackPanel>
+                            <Border Background="#101720" BorderBrush="#26313F" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,10,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="跟随全局取向" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Muted}" FontSize="11.5" />
+                                    <TextBlock x:Name="PrefFollowText" Text="均衡" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Accent}" FontSize="11.5" Margin="6,0,0,0" />
+                                    <TextBlock Text="（到「① 策略」页修改）" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Muted}" FontSize="11" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button x:Name="BtnCalibStart" Content="▶ 开始自动标定" Style="{StaticResource BtnAccent}" Margin="0" Click="BtnCalibStart_Click" />
+                                <Button x:Name="BtnCalibStop" Content="■ 停止" Style="{StaticResource BtnDanger}" IsEnabled="False" Click="BtnCalibStop_Click" />
+                                <TextBlock x:Name="CalibGpuHint" Text="" VerticalAlignment="Center" Foreground="{StaticResource Warn}" FontSize="11.5" Margin="12,0,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock x:Name="CalibStageText" Text="未开始" Foreground="#EAF1F8" FontSize="12.5" />
+                            <ProgressBar x:Name="CalibProgress" Height="8" Margin="0,8,0,6" Background="#101720" BorderThickness="0" Foreground="#17608C" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="CalibDetailText" Text="" Foreground="{StaticResource Muted}" FontSize="11.5" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="标定结果与推荐曲线" Foreground="#EAF1F8" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock x:Name="CalibSummary" Text="尚无结果" TextWrapping="Wrap" Foreground="{StaticResource Accent}" FontSize="12" />
+                            <ListBox x:Name="CalibNotes" MaxHeight="110" Margin="0,8,0,8" Background="#101720"
+                                     BorderThickness="0" Foreground="#C7D3DF" FontSize="11.5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="推荐风扇曲线" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,4" />
+                                    <DataGrid x:Name="CalibFanGrid" IsReadOnly="True" MaxHeight="190">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="温度 ℃" Binding="{Binding Temperature, StringFormat=F0}" Width="*" />
+                                            <DataGridTextColumn Header="风扇 %" Binding="{Binding Value, StringFormat=F0}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="推荐频率曲线" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,4" />
+                                    <DataGrid x:Name="CalibFreqGrid" IsReadOnly="True" MaxHeight="190">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="温度 ℃" Binding="{Binding Temperature, StringFormat=F0}" Width="*" />
+                                            <DataGridTextColumn Header="上限 %" Binding="{Binding Value, StringFormat=F0}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button x:Name="BtnApplyCalib" Content="应用推荐曲线" Style="{StaticResource BtnAccent}" Margin="0" IsEnabled="False" Click="BtnApplyCalib_Click" />
+                                <Button Content="打开数据目录" Style="{StaticResource Btn}" Click="BtnOpenLogs_Click" />
+                                <TextBlock x:Name="CalibCsvText" Text="" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" Margin="10,0,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 高级调参 -->
+            <ScrollViewer x:Name="PanelAdvanced" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="AdvancedStack">
+                    <!-- ⓪ 配置档：把「静音 · 自定义」到底是什么摊开给用户看 -->
+                    <Expander IsExpanded="True">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⓪ 当前配置档：内置基线 + 你的增量" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="取向（静音 / 均衡 / 性能）是**内置基线**：每一项推荐值都由模型给定，用户没有直接修改它的权限。&#10;&#10;你在下面各面板里手改的高级参数，不是另存一份配置，而是压在这条基线上的**增量**。每次「应用」时，程序会把「基线 + 增量」一起持久化到 settings.json，顶栏就显示「静音 · 自定义」。&#10;&#10;好处是：以后升级程序、模型修正了某个基线值（比如 PL2 倍率），你没改过的项会自动跟随新基线，改过的项仍然保持你的值 —— 整份拷贝做不到这一点。&#10;&#10;表格里「🔒 锁定」的几行是模型/硬件给死的量（安全线、TJmax、τ 的 log2 可表示域、PL2/PL1 上限、芯片最大睿频、在线估计的热阻），它们不是策略选择，用户改不了。" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <TextBlock x:Name="ProfileSummaryText" Text="配置档：均衡" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Accent}" FontSize="12.5" FontWeight="SemiBold" />
+                                <TextBlock x:Name="ProfileHintText" Text="" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0" />
+                                <!-- 用 ItemsControl 而不是 DataGrid：DataGrid 的列头/滚动条是系统浅色主题，
+                                     在深色界面里会冒出白条和灰边，还不容易完全覆盖。这里自己排格子，颜色统一。 -->
+                                <Border Background="#0F1620" BorderBrush="{StaticResource CardBorder}" BorderThickness="1"
+                                        CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="86" />
+                                                <ColumnDefinition Width="86" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="参数" Foreground="#5F6E80" FontSize="10.5" />
+                                            <TextBlock Grid.Column="1" Text="来源" Foreground="#5F6E80" FontSize="10.5" />
+                                            <TextBlock Grid.Column="2" Text="内置基线" Foreground="#5F6E80" FontSize="10.5" />
+                                            <TextBlock Grid.Column="3" Text="当前值" Foreground="#5F6E80" FontSize="10.5" />
+                                            <TextBlock Grid.Column="4" Text="机理约束 / 为什么" Foreground="#5F6E80" FontSize="10.5" />
+                                        </Grid>
+                                        <Border Height="1" Background="#1E2733" Margin="0,0,0,4" />
+                                        <ItemsControl x:Name="ProfileList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,3,0,0" ToolTip="{Binding BoundText}"
+                                                          ToolTipService.ShowDuration="120000">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="80" />
+                                                            <ColumnDefinition Width="86" />
+                                                            <ColumnDefinition Width="86" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Style="{StaticResource ProfileCell}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Source}" Style="{StaticResource ProfileFlagCell}" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding BaseText}" Style="{StaticResource ProfileFlagCell}" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding ValueText}" Style="{StaticResource ProfileFlagCell}" />
+                                                        <TextBlock Grid.Column="4" Text="{Binding BoundText}" Style="{StaticResource ProfileCell}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="恢复内置基线" Style="{StaticResource Btn}" Margin="0" Click="BtnResetProfile_Click"
+                                            ToolTip="把上面所有「自定义」项清空，回到当前取向的模型基线（只进草稿，点「应用」才生效）" />
+                                    <TextBlock x:Name="ProfileSavedText" Text="" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Muted}" FontSize="11" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander>
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="① 智能自动 CPU 散热（推荐）" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="控制律：温度是「约束」不是「目标」。程序每 3 秒读一次 CPU 交付指标（当前频率 APERF/MPERF、包功率 RAPL，以及是温度墙 / 功率墙 / 睿频上限在卡），据此决定该升还是该降 PL1 —— 只要是功率墙且还有余温，就把 PL1 放开换性能；温度上限只作为安全边界（≤95℃）。&#10;&#10;档位差异（温度上限 × 风扇）：静音 88℃ / ≤55%、平衡 88℃ / ≤75%、性能 90℃ / 100%。静音与平衡共用同一上限，只靠风扇 + EPP + PL2/τ 区分 —— 这样「想安静」不会顺手把性能一起削掉；性能档上限最高且满转速，功率预算最大、交付频率最高。" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkAutoCpu" Content="启用智能自动：以「交付性能最大」为目标、温度为上限，闭环调 PL1/PL2/Time/EPP（需管理员 + MSR 可用）" ToolTip="开启后这四项由控制器持续接管。手改 PL1/PL2/Time/EPP 并点「应用」时，智能自动会自动让位（关闭），完全按你的值执行；想恢复自动，重新勾选即可。" />
+                                <TextBlock x:Name="CapAutoText" Text="" TextWrapping="Wrap" Margin="0,6,0,0"
+                                           FontSize="11" Foreground="{StaticResource Muted}" />
+                                <Border Background="#101720" BorderBrush="#26313F" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,10,0,0">
+                                    <TextBlock x:Name="AdvProfileText" Text="取向、温度上限、室温在「① 策略」页统一设置（全局参数只允许一处修改）"
+                                               TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11.5" />
+                                </Border>
+                                <CheckBox x:Name="ChkAutoDryRun" Content="预览模式：只计算不写 MSR（安全试用）" />
+                                <TextBlock x:Name="AutoStatusText" Text="未启用" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Accent}" FontSize="11.5" Margin="0,10,0,0" />
+                                <TextBlock x:Name="PerfStatusText" Text="" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Ok}" FontSize="11.5" Margin="0,4,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="启用并应用" Style="{StaticResource BtnAccent}" Margin="0" Click="BtnAutoApply_Click" />
+                                    <Button Content="重估热阻" Style="{StaticResource Btn}" Click="BtnResetR_Click"
+                                            ToolTip="清空在线热阻估计，然后用新的满载样本重新拟合 T = a + R·P。&#10;&#10;换了硅脂/相变片、清洁或改装散热、换风扇曲线之后都要点一次 —— 否则控制器还在用旧热阻算功率预算，表现为「温度明明很低，却一直不敢加功率」。" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander>
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="② CPU 精细微调（高级手工）" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="PL1 = 持续功率上限（长期能烧多少瓦）；PL2 = 突增上限（短时能冲到多少）；τ = 突增能撑多久才回落 PL1。三者是 MSR 0x610 里三组独立字段，不是同一个参数。&#10;&#10;EPP 0 = 最积极升频（点一下就响），255 = 最省电（升频慢、更凉）。睿频上限 35 = 3.5GHz。&#10;&#10;写入后立刻回读校验；被 BIOS 锁定的项会显示失败，不会假装成功。改了这里的值就等于在「取向预设」之上叠加自定义，顶栏会显示「取向 · 自定义」。" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkCpuTune" Content="启用 CPU 精细调控（直接写 MSR：PL1/PL2/Time/EPP/睿频，需管理员）" />
+
+                                <!-- 平台能力说明：这一块是"哪些旋钮在本机根本不存在"的唯一出处，
+                                     下面的控件会按它逐项禁用（ToolTipService.ShowOnDisabled 保证禁用后仍能看原因） -->
+                                <Border x:Name="CpuCapBox" Background="#101720" BorderBrush="#26313F" BorderThickness="1"
+                                        CornerRadius="6" Padding="10,7" Margin="0,10,0,0">
+                                    <StackPanel>
+                                        <TextBlock x:Name="CpuCapTitle" Text="正在探测本机 CPU 平台能力…"
+                                                   TextWrapping="Wrap" FontSize="11.5" Foreground="#D8E2EC" />
+                                        <TextBlock x:Name="CpuCapBadges" Text="" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   FontFamily="Consolas" FontSize="11.5" Foreground="{StaticResource Ok}" />
+                                        <TextBlock x:Name="CpuCapDetail" Text="" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   FontSize="11" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 平台功率：PL1/PL2 的可用区间由它决定，所以显示在参数之前。
+                                     两个数能读到（MSR 0x614 / NVML）就用真值，读不到退回型号表/内置默认，
+                                     并且允许用户手填覆盖（0 = 自动）。来源永远显示出来，不让人猜。 -->
+                                <Border x:Name="PlatPowerBox" Background="#101720" BorderBrush="#26313F"
+                                        BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="平台功率上限" FontSize="11.5" Foreground="#D8E2EC"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Style="{StaticResource InfoIcon}"
+                                                       ToolTip="PL1/PL2 的「合法区间」不是常数，而是这台机器的电气能力，所以三个数各有来源：&#10;&#10;CPU 设计功耗：优先读 MSR 0x614 的 thermal_spec_power（Intel 规格里声明的 TDP）；读不到则退回 MSR 0x610 的 BIOS 出厂 PL1；再退回型号表（标称值，仅供参考）；最后是内置默认 45W。&#10;&#10;PL2 上限：取 BIOS 实际配置的 PL2（若读得到），否则按 1.25×CPU 设计功耗派生（Intel 建议的相对关系）。&#10;&#10;独显设计功耗：优先读 nvidia-smi 的功率上限（NVML）；Optimus/Max-Q 笔记本上这组字段常为 N/A（独显由 MUX 动态供电，PMIC 没暴露给 NVML），此时查型号表；最后用内置默认 75W。&#10;&#10;为什么要手填：换主板、cTDP 改装、非 Intel 平台（AMD 没有 0x614）、或探测失败时，只有你知道机器到底多少瓦。填 0 表示交回自动探测。" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="PlatPowerDetail" Text="正在探测…" TextWrapping="Wrap"
+                                                   Margin="0,4,0,0" FontSize="11.5" Foreground="{StaticResource Muted}" />
+                                        <!-- 来源不可靠时单独一行警告：把它和数值混在一行，会把"45W"也染成警告色 -->
+                                        <TextBlock x:Name="PlatPowerNote" Text="" TextWrapping="Wrap" Visibility="Collapsed"
+                                                   Margin="0,2,0,0" FontSize="11" Foreground="{StaticResource Warn}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" ToolTipService.ShowOnDisabled="True">
+                                            <TextBlock Text="CPU 设计功耗" Width="96" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                            <TextBox x:Name="CpuDesignBox" Width="58" Text="0"
+                                                     ToolTip="0 = 自动探测。手填后 PL1 的可用上限立刻变成这个值。" />
+                                            <TextBlock Text="W（0=自动）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" Margin="4,0,0,0" />
+                                            <TextBlock Text="独显设计功耗" Width="96" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="18,0,0,0" />
+                                            <TextBox x:Name="GpuDesignBox" Width="58" Text="0"
+                                                     ToolTip="0 = 自动探测。只影响「整机热预算」的解释（CPU 与 GPU 共用热管），不影响 CPU 控制。" />
+                                            <TextBlock Text="W（0=自动）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" Margin="4,0,0,0" />
+                                            <Button Content="重新探测" Style="{StaticResource Btn}" Margin="16,0,0,0"
+                                                    Click="BtnDetectPower_Click"
+                                                    ToolTip="重新读 MSR 0x614 / nvidia-smi / WMI。换机器、换显卡、装驱动之后点一次。" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid Margin="0,10,0,0" ToolTipService.ShowOnDisabled="True">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="降压" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="UvBox" Width="64" Text="-50" />
+                                        <TextBlock Text="mV" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="PL1 持续" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="Pl1Box" Width="64" Text="0" />
+                                        <TextBlock x:Name="Pl1HintText" Text="W（0=不改，上限按本机设计功耗）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal">
+                                        <TextBlock Text="PL2 突增" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="Pl2Box" Width="64" Text="0" />
+                                        <TextBlock x:Name="Pl2HintText" Text="W（0=不改，上限按 BIOS/1.25×设计功耗）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="Time/τ" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="TauBox" Width="64" Text="0" />
+                                        <TextBlock Text="s（0=不改）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="EPP" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="EppBox" Width="64" Text="-1" />
+                                        <TextBlock Text="0性能 / 255节能" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                        <TextBlock Text="睿频上限" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="TurboBox" Width="64" Text="0" />
+                                        <TextBlock x:Name="TurboHintText" Text="×100MHz（0=不改）" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="ChkUv" Content="启用降压（实验性：Intel + 关闭内存完整性）" Margin="0,12,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="读取当前值" Style="{StaticResource Btn}" Margin="0" Click="BtnReadCpu_Click" />
+                                    <Button Content="还原 MSR" Style="{StaticResource BtnDanger}" Click="BtnRestoreCpu_Click" />
+                                </StackPanel>
+                                <TextBlock x:Name="CpuStatusText" Text="未读取" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander Header="③ 风扇与降频开关">
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkFan" Content="启用风扇曲线调速（需要主板支持 PWM 软件控制）" />
+                                <CheckBox x:Name="ChkFreq" Content="启用 CPU 降频（走 Windows 电源管理 PROCTHROTTLEMAX）"
+                                          ToolTip="只有「① 策略 → 控制通道」选成「电源计划限频」时才可用；选 MSR 通道时本项会被强制关掉，避免两套控制器互相覆盖。" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <TextBlock Text="写 EC 间隔" Width="78" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="EcIntervalBox" Width="64" Text="3000"
+                                             ToolTip="两次写风扇寄存器之间的最小间隔（毫秒，1000–10000）。&#10;&#10;笔记本风扇没有标准 PWM 通道，只能由 NBFC 直写 EC；而电池电量、是否插电也由同一个 EC 上报。写得太勤（例如 1 秒一次）会把 ACPI EC 驱动打到超时，事件日志出现 ACPI 13，系统会短暂『检测不到电池』。&#10;&#10;3 秒足够跟上温度变化（温度时间常数是秒级到百秒级），对控温几乎没有损失。" />
+                                    <TextBlock Text="ms（1000–10000，越大越省 EC）" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Muted}" FontSize="11" Margin="4,0,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander Header="④ 曲线手动微调">
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="风扇曲线：温度 → PWM 输出" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,6" />
+                                    <DataGrid x:Name="FanGrid" MaxHeight="220" SelectionMode="Single" SelectionUnit="Cell">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="温度 ℃" Binding="{Binding Temperature, StringFormat=F0}" Width="*" />
+                                            <DataGridTextColumn Header="风扇 %" Binding="{Binding Value, StringFormat=F0}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="+ 增加点" Style="{StaticResource Btn}" Margin="0" Click="FanAdd_Click" />
+                                        <Button Content="− 删除选中" Style="{StaticResource Btn}" Click="FanDel_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="降频曲线：温度 → CPU 最大性能状态" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,6" />
+                                    <DataGrid x:Name="FreqGrid" MaxHeight="220" SelectionMode="Single" SelectionUnit="Cell">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="温度 ℃" Binding="{Binding Temperature, StringFormat=F0}" Width="*" />
+                                            <DataGridTextColumn Header="上限 %" Binding="{Binding Value, StringFormat=F0}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="+ 增加点" Style="{StaticResource Btn}" Margin="0" Click="FreqAdd_Click" />
+                                        <Button Content="− 删除选中" Style="{StaticResource Btn}" Click="FreqDel_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Expander>
+
+                    <Expander>
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⑤ 风扇控制算法（回差 / 斜率 / PID）" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="回差：温度要跌破「曲线值 − 回差」才降速，防止在临界点来回抖。&#10;升速斜率 60%/s、降速斜率 10%/s：升快降慢，避免风扇忽快忽慢的「直升机」感。&#10;保护温度：超过就无条件全力，独立于曲线。&#10;&#10;PID 模式（需要手动勾选）：忽略风扇曲线，直接把温度压到 PID 目标值。Kp 越大升温时风扇冲得越快；Ki 消除长期偏差。建议 Kp 3~8、Ki 0.1~0.6。&#10;&#10;注意这里的「PID 目标」与策略页的「温度上限」不是一回事：前者是风扇 PID 的 setpoint，后者是允许的最高温度 / 功率预算上限。" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="采样间隔" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="IntervalBox" Width="70" Text="1000" />
+                                        <TextBlock Text="ms" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="回差" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="HystBox" Width="70" Text="3" />
+                                        <TextBlock Text="°C" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="风扇最小" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBlock Text="→ 在「① 策略」页" VerticalAlignment="Center" Foreground="{StaticResource Accent}" FontSize="11.5" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal">
+                                        <TextBlock Text="保护温度" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}"
+                                                   ToolTip="模型基线锁定的安全线：TJmax 100℃ − 5℃ 余量 = 95℃。只允许往下调，不允许上调（超过 95 会被自动拉回）。" />
+                                        <TextBox x:Name="CriticalBox" Width="70" Text="95"
+                                                 ToolTip="上限 95℃（模型基线，锁定）；低于 95 可以更保守" />
+                                        <TextBlock Text="°C" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="升速斜率" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="RampUpBox" Width="70" Text="60" />
+                                        <TextBlock Text="%/s" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="降速斜率" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                        <TextBox x:Name="RampDownBox" Width="70" Text="10" />
+                                        <TextBlock Text="%/s" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                        <TextBlock Text="PID 目标" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}"
+                                                   ToolTip="仅「目标温度 PID」模式下使用；与策略页的「温度上限」无关" />
+                                        <TextBox x:Name="TargetBox" Width="70" Text="80" />
+                                        <TextBlock Text="°C" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <CheckBox x:Name="ChkTargetMode" Content="改用「目标温度 PID」模式（忽略风扇曲线，直接把温度压到目标值）" Margin="0,10,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Kp (比例)" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="KpBox" Width="70" Text="5" />
+                                    <TextBlock Text="Ki (积分)" Width="72" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="12,0,0,0" />
+                                    <TextBox x:Name="KiBox" Width="70" Text="0.35" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander>
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⑥ 实测策略模型（用实验数据自动调参）" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource InfoIcon}"
+                                           ToolTip="模型从 lab-data\model-*.json 读取，含稳态模型、时间常数 τ 与离散阶梯表；运行时只做查表推理，不依赖 Python。&#10;&#10;它的取向跟随全局取向（静音 / 均衡 / 性能），不再单独选择 —— 避免同一个「取向」在多处各有一份。没有真机实验数据前请不要开启。" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkPolicy" Content="启用实测策略模型（按阶梯表查表，忽略上面两条曲线）"
+                                          Checked="ChkPolicy_Changed" Unchecked="ChkPolicy_Changed" />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="模型文件" Width="62" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="PolicyPathBox" Width="300" IsReadOnly="True" ToolTip="由 lab\run-lab.cmd 跑完实验后自动生成" />
+                                    <Button Content="选择…" Style="{StaticResource Btn}" Click="BtnPickPolicy_Click" />
+                                    <Button Content="用最新结果" Style="{StaticResource Btn}" Click="BtnAutoPolicy_Click" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="取向" Width="62" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBlock x:Name="PolicyFollowText" Text="跟随全局取向" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Accent}" FontSize="11.5" />
+                                </StackPanel>
+                                <TextBlock x:Name="PolicyInfoText" Text="未载入策略模型" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander Header="⑦ 数据采集日志">
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkLogging" Content="持续记录采样数据到 CSV（用于离线分析 / 反馈问题）" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="每" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <TextBox x:Name="LogEveryBox" Width="60" Margin="8,0,6,0" Text="2" />
+                                    <TextBlock Text="次采样记录 1 行" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                    <Button Content="打开数据目录" Style="{StaticResource Btn}" Click="BtnOpenLogs_Click" />
+                                </StackPanel>
+                                <TextBlock x:Name="LogPathText" Text="" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+
+                    <Expander Header="⑧ 启动与退出">
+                        <Border Style="{StaticResource Card}" Margin="0,6,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="ChkMinTray" Content="关闭窗口时最小化到托盘（后台继续温控）" />
+                                <CheckBox x:Name="ChkAutoStart" Content="开机自动启动（创建管理员计划任务）" />
+                                <TextBlock Text="这两项属于程序行为，勾选即保存，不需要走「应用」。" TextWrapping="Wrap"
+                                           Foreground="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 诊断 -->
+            <Grid x:Name="PanelDiag" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.15*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,10,0">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="重新检测" Style="{StaticResource BtnAccent}" Margin="0" Click="BtnCheck_Click" />
+                            <Button Content="导出报告" Style="{StaticResource Btn}" Click="BtnExport_Click" />
+                            <Button Content="打开日志目录" Style="{StaticResource Btn}" Click="BtnOpenLogs_Click" />
+                        </StackPanel>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="DiagList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#1E2733" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,8" Background="#101720">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StatusBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <TextBlock Text="{Binding Name}" Foreground="#EAF1F8" FontSize="12.5" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}" FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#C7D3DF" FontSize="11.5" Margin="0,5,0,0" />
+                                                <TextBlock Text="{Binding Advice}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="详细报告 / 运行日志" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="1.6*" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBox x:Name="ReportBox" Grid.Row="0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11" Background="#10161F" Margin="0,0,0,8" />
+                            <TextBox x:Name="LogBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11" Background="#10161F" />
+                        </Grid>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- 待应用变更条：参数改了但还没写硬件的唯一提示点 -->
+        <Border Grid.Row="3" Background="#141A24" BorderBrush="#1E2733" BorderThickness="0,1,0,0" Padding="16,7">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="PendingText" Grid.Column="0" Text="无待应用变更"
+                           Foreground="{StaticResource Muted}" FontSize="11.5" VerticalAlignment="Center" FontWeight="SemiBold" />
+                <TextBlock x:Name="PendingList" Grid.Column="1" Text="参数与硬件当前生效值一致"
+                           Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center"
+                           Margin="14,0,14,0" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button x:Name="BtnDiscardDraft" Content="放弃草稿" Style="{StaticResource Btn}" IsEnabled="False" Click="BtnDiscardDraft_Click" />
+                    <Button x:Name="BtnApplyDraft" Content="应用（写入硬件）" Style="{StaticResource BtnAccent}" IsEnabled="False" Click="BtnApplyDraft_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="4" Background="#111823" BorderBrush="#1E2733" BorderThickness="0,1,0,0" Padding="16,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#5AC8FA" VerticalAlignment="Center" Margin="0,0,7,0" />
+                    <TextBlock x:Name="StatusText" Text="正在初始化…" Foreground="#C7D3DF" FontSize="11.5" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock x:Name="ActionText" Grid.Column="1" Text="" Foreground="{StaticResource Muted}"
+                           FontSize="11" VerticalAlignment="Center" Margin="14,0,0,0" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="AdminText" Grid.Column="2" Text="" Foreground="{StaticResource Muted}" FontSize="11" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

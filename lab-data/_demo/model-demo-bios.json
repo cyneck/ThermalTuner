@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "generated": "2026-10-28 16:02:31",
+  "source_csv": "lab-demo-bios.csv",
+  "mode": "bios",
+  "fan_controllable": false,
+  "features": [
+    "功耗 P (W)"
+  ],
+  "steady_model": {
+    "type": "linear_basis",
+    "intercept": 61.6793,
+    "mu": [
+      22.4677
+    ],
+    "sd": [
+      10.589909
+    ],
+    "terms": [
+      {
+        "name": "P",
+        "coef": 12.159128
+      }
+    ]
+  },
+  "inversion_model": "线性 T=a+b·P",
+  "discrete_table": {
+    "type": "stepwise",
+    "bins": [
+      [
+        0.0,
+        16.31,
+        49.93
+      ],
+      [
+        16.31,
+        25.56,
+        59.29
+      ],
+      [
+        25.56,
+        null,
+        75.81
+      ]
+    ]
+  },
+  "dynamic": {
+    "tau_s": 60,
+    "alpha": 0.0165,
+    "dt": 1.0,
+    "arx": {
+      "a": 0.9816,
+      "b": 0.0205,
+      "c": 0.678,
+      "rmse": 0.459,
+      "n": 1069
+    }
+  },
+  "reference": {
+    "T_base": 40.0,
+    "rth_closed_loop": 1.148
+  },
+  "control_ladder": [
+    {
+      "T_hi": 95,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 3400,
+          "pred_T": 81.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 90,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 3400,
+          "pred_T": 81.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 88,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 3400,
+          "pred_T": 81.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 85,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 3400,
+          "pred_T": 81.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 82,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 3400,
+          "pred_T": 81.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 80,
+      "options": [
+        {
+          "cap": 95,
+          "fan": null,
+          "P": 35.6,
+          "f": 3305,
+          "pred_T": 76.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 78,
+      "options": [
+        {
+          "cap": 95,
+          "fan": null,
+          "P": 35.6,
+          "f": 3305,
+          "pred_T": 76.8,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 75,
+      "options": [
+        {
+          "cap": 90,
+          "fan": null,
+          "P": 31.2,
+          "f": 3210,
+          "pred_T": 71.7,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 72,
+      "options": [
+        {
+          "cap": 90,
+          "fan": null,
+          "P": 31.2,
+          "f": 3210,
+          "pred_T": 71.7,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    },
+    {
+      "T_hi": 70,
+      "options": [
+        {
+          "cap": 85,
+          "fan": null,
+          "P": 26.8,
+          "f": 3115,
+          "pred_T": 66.7,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）",
+          "turbo": true
+        }
+      ],
+      "achievable": true
+    }
+  ],
+  "cap_power_map": {
+    "points": [
+      [
+        35,
+        11.1
+      ],
+      [
+        50,
+        14.4
+      ],
+      [
+        65,
+        18.2
+      ],
+      [
+        80,
+        22.4
+      ],
+      [
+        100,
+        40.0
+      ]
+    ],
+    "note": "Turbo 开启时的实测 cap→功耗分段线性映射"
+  },
+  "quality": {
+    "stages": 6,
+    "samples": 1070,
+    "dropped_unsteady": [],
+    "loo_rmse": 2.74,
+    "loo_mae": 1.84,
+    "loo_r2": 0.94,
+    "chosen": "线性 T=a+b·P",
+    "leaderboard": [
+      {
+        "model": "线性 T=a+b·P",
+        "rmse": 2.74,
+        "mae": 1.84,
+        "r2": 0.94
+      },
+      {
+        "model": "神经网络 MLP(h=6)",
+        "rmse": 3.02,
+        "mae": 2.09,
+        "r2": 0.927
+      },
+      {
+        "model": "二次 T=a+b·P+c·P²",
+        "rmse": 3.79,
+        "mae": 2.44,
+        "r2": 0.885
+      },
+      {
+        "model": "阶梯表（4 箱）",
+        "rmse": 8.87,
+        "mae": 7.32,
+        "r2": 0.37
+      },
+      {
+        "model": "均值基线",
+        "rmse": 13.41,
+        "mae": 11.31,
+        "r2": -0.44
+      }
+    ]
+  }
+}

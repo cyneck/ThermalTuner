@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>散热问题全链路：识别 → 模型 → 原因 → 解决</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#fff; --ink:#1a1a1a; --muted:#666; --line:#e5e5e5;
+    --blue:#378ADD; --red:#E24B4A; --amber:#BA7517; --teal:#1D9E75; --purple:#7F77DD;
+    --blue-bg:#E6F1FB; --red-bg:#FCEBEB; --amber-bg:#FAEEDA; --teal-bg:#E1F5EE; --purple-bg:#EEEDFE;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);margin:0;line-height:1.7}
+  .wrap{max-width:880px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:24px;font-weight:600;margin:0 0 6px}
+  h2{font-size:19px;font-weight:600;margin:40px 0 12px;padding-left:10px;border-left:4px solid var(--blue)}
+  h3{font-size:16px;font-weight:600;margin:24px 0 8px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+  .figure{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;text-align:center}
+  .figure svg{max-width:100%;height:auto}
+  .cap{color:var(--muted);font-size:13px;margin-top:8px;text-align:center}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+  th{background:#f3f3f3;font-weight:600}
+  code{background:#f1f1f1;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Consolas,monospace;font-size:13px}
+  .formula{background:#f7f7f7;border-radius:8px;padding:12px 16px;font-family:"SF Mono",Consolas,monospace;font-size:14px;overflow-x:auto;margin:10px 0}
+  .hl{background:#fff8e1;padding:2px 6px;border-radius:4px}
+  .note{color:var(--muted);font-size:13px;border-left:3px solid #bbb;padding-left:10px;margin-top:8px}
+  .pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;margin-right:6px}
+  .pill.silent{background:#E1F5EE;color:#085041}
+  .pill.balanced{background:#E6F1FB;color:#0C447C}
+  .pill.perf{background:#FCEBEB;color:#791F1F}
+  .flow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .flow .step{flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+  .flow .step b{display:block;font-size:14px;margin-bottom:4px}
+  .flow .step span{font-size:12px;color:var(--muted)}
+  .flow .arrow{font-size:20px;color:var(--muted)}
+  .verdict{font-size:15px;font-weight:600;padding:12px 16px;border-radius:10px;margin:10px 0}
+  .verdict.tim{background:var(--red-bg);color:#791F1F}
+  .verdict.healthy{background:var(--teal-bg);color:#085041}
+  .verdict.fan{background:var(--amber-bg);color:#633806}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>散热问题全链路解决方案</h1>
+<div class="sub">ThermalPilot · 从「识别问题」到「解决问题」的完整闭环</div>
+
+<div class="card">
+<p>整条链路一句话概括：</p>
+<div class="flow">
+  <div class="step"><b>① 压测采样</b><span>5 分钟跑出温度/功耗/风扇轨迹</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>② 识别问题</b><span>判定树定位故障环节</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>③ 物理模型</b><span>两热阻 + 三档旋钮</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>④ 给出策略</b><span>换硅脂 / 清灰 / 调档</span></div>
+</div>
+</div>
+
+<h2>一、识别问题：判定树定位到具体环节</h2>
+<p>检测模块（<code>tools/detect.py</code>）输出一个 <code>scene</code> 场景码和一条 <code>verdict</code> 结论。五个可能结果：</p>
+<table>
+  <tr><th>场景码</th><th>含义</th><th>判据</th><th>根因</th></tr>
+  <tr><td><code>tim_fault</code></td><td>硅脂/压装断链</td><td>R1 ≥ 0.8 K/W</td><td>热量出不了芯片</td></tr>
+  <tr><td><code>fan_fault</code></td><td>风扇/鳍片/风道</td><td>R2 ≥ 0.7 且 ΔT &lt; 6℃</td><td>热量散不到空气</td></tr>
+  <tr><td><code>overall_weak</code></td><td>整体散热不足</td><td>贴墙 ≥50% 且 R1 正常</td><td>散热规模不够</td></tr>
+  <tr><td><code>power_limit</code></td><td>电气功率墙</td><td>P &lt; 0.85×设计 且不贴墙</td><td>供电/PL 限制</td></tr>
+  <tr><td><code>healthy</code></td><td>健康</td><td>都不命中</td><td>无</td></tr>
+</table>
+
+<h2>二、原因解释：每个场景「为什么热」</h2>
+<div class="card">
+<h3><span class="pill" style="background:var(--red-bg);color:#791F1F">tim_fault</span> 硅脂断链（本机实测案例）</h3>
+<div class="verdict tim">本机：R1 = 1.76 K/W（正常 7 倍），R2 = 0.32（健康），满载 96.7℃ 贴墙</div>
+<p><b>原因</b>：die 到散热器之间的硅脂干涸或压装不实，热阻从正常 0.1~0.35 涨到 1.76。热量堵在芯片里，<span class="hl">风扇转速再高也吹不到结温</span>——因为风扇只能影响 R2，而 R2 是健康的。</p>
+<p><b>证据链</b>：早期 40W → 稳态 35W 的功率回落（P_sag=2.9W）+ 97% 样本贴 95℃ = 温度墙在持续削功率。35W 不是电气 PL，是热的墙。</p>
+<p><b>解决</b>：硬件——重涂硅脂 / 重新压装（一次到位，反事实：换硅脂后 50W 满载 ≈ 48℃）。软件——降功率保命（限睿频、降目标温度）。</p>
+</div>
+
+<div class="card">
+<h3><span class="pill" style="background:var(--amber-bg);color:#633806">fan_fault</span> 风扇/风道</h3>
+<p><b>原因</b>：R2 偏高（>0.7），且把风扇从 60% 拉到 100% 温度几乎不降（ΔT &lt; 6℃）——说明风量已经到顶或风道堵死。</p>
+<p><b>解决</b>：清灰 / 检查风扇转速 / 疏通出风口。软件在修复前降功率避开过热。</p>
+</div>
+
+<div class="card">
+<h3><span class="pill" style="background:var(--purple-bg);color:#3C3489">overall_weak</span> 整体不足</h3>
+<p><b>原因</b>：R1 和风扇都正常，仍然贴墙——散热规模（热管数、鳍片面积）对这台机器的功率设计不够，或环境温度过高。</p>
+<p><b>解决</b>：软件压功率到散热能力之内；硬件考虑散热底座或降低室温。</p>
+</div>
+
+<div class="card">
+<h3><span class="pill" style="background:var(--blue-bg);color:#0C447C">power_limit</span> 电气墙</h3>
+<p><b>原因</b>：温度远没到墙，功率却上不去——PL/供电/适配器限制。<b>散热完全没问题</b>，性能释放被电气参数卡住。</p>
+<p><b>解决</b>：查 PL 设置、供电、适配器；软件可适当放开功耗墙。</p>
+</div>
+
+<h2>三、三档散热模型：静音 / 平衡 / 性能</h2>
+<p>识别出问题后，用户选一档，策略引擎（<code>tools/thermal_policy.py</code>）给出三个旋钮：<b>温度上限</b>、<b>风扇上限</b>、<b>功率预算</b>。<span class="hl">注意：温度上限是「允许热到什么程度」的约束，不是「要压到多少」的目标</span>——温度是功率乘热阻的结果，不是原因。</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 320" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- three knobs as a vertical meter -->
+  <text x="40" y="40" font-size="15" font-weight="600" fill="#333">三个旋钮（从左到右：噪声 → 温度 → 性能）</text>
+
+  <!-- silent -->
+  <rect x="40" y="70" width="180" height="170" rx="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+  <text x="130" y="96" text-anchor="middle" font-size="15" font-weight="600" fill="#085041">静音</text>
+  <text x="130" y="116" text-anchor="middle" font-size="12" fill="#0F6E56">上限 88℃</text>
+  <text x="130" y="136" text-anchor="middle" font-size="12" fill="#0F6E56">风扇 ≤ 55%</text>
+  <text x="130" y="156" text-anchor="middle" font-size="12" fill="#0F6E56">空闲 20%</text>
+  <rect x="64" y="174" width="132" height="12" rx="6" fill="#fff" stroke="#1D9E75" stroke-width="0.5"/>
+  <rect x="64" y="174" width="60" height="12" rx="6" fill="#5DCAA5"/>
+  <text x="130" y="212" text-anchor="middle" font-size="11" fill="#0F6E56">噪声低 · 温度偏高 · 功率最小</text>
+
+  <!-- balanced (default, highlighted) -->
+  <rect x="250" y="56" width="180" height="198" rx="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="1.5"/>
+  <text x="340" y="82" text-anchor="middle" font-size="15" font-weight="600" fill="#0C447C">平衡（默认）</text>
+  <text x="340" y="102" text-anchor="middle" font-size="12" fill="#185FA5">上限 88℃</text>
+  <text x="340" y="122" text-anchor="middle" font-size="12" fill="#185FA5">风扇 ≤ 75%</text>
+  <text x="340" y="142" text-anchor="middle" font-size="12" fill="#185FA5">空闲 30%</text>
+  <rect x="274" y="160" width="132" height="12" rx="6" fill="#fff" stroke="#378ADD" stroke-width="0.5"/>
+  <rect x="274" y="160" width="96" height="12" rx="6" fill="#85B7EB"/>
+  <text x="340" y="198" text-anchor="middle" font-size="11" fill="#185FA5">噪声适中 · 温度适中 · 性能保持</text>
+  <text x="340" y="220" text-anchor="middle" font-size="11" font-weight="600" fill="#185FA5">噪声不要太大太久</text>
+
+  <!-- performance -->
+  <rect x="460" y="70" width="180" height="170" rx="12" fill="#FCEBEB" stroke="#E24B4A" stroke-width="0.5"/>
+  <text x="550" y="96" text-anchor="middle" font-size="15" font-weight="600" fill="#791F1F">性能</text>
+  <text x="550" y="116" text-anchor="middle" font-size="12" fill="#A32D2D">上限 90℃</text>
+  <text x="550" y="136" text-anchor="middle" font-size="12" fill="#A32D2D">风扇 ≤ 100%</text>
+  <text x="550" y="156" text-anchor="middle" font-size="12" fill="#A32D2D">空闲 40%</text>
+  <rect x="484" y="174" width="132" height="12" rx="6" fill="#fff" stroke="#E24B4A" stroke-width="0.5"/>
+  <rect x="484" y="174" width="132" height="12" rx="6" fill="#F0997B"/>
+  <text x="550" y="212" text-anchor="middle" font-size="11" fill="#A32D2D">噪声高 · 温度可高 · 功率最大</text>
+</svg>
+<div class="cap">图 · 三档旋钮对比：平衡为默认，居中兼顾性能与噪声</div>
+</div>
+
+<h3>三档旋钮如何决定功率预算</h3>
+<div class="formula">P_budget = (T_ceiling − T_amb) / (R1 + R2(fan_max))</div>
+<p>两个变量方向相反：<b>温度上限越高 → 功率预算越大</b>；<b>风扇占空比越高 → R2 越小 → 功率预算也越大</b>。所以"性能档"应当同时具备"上限高 + 风扇满"，而不是把温度上限压低。</p>
+<table>
+  <tr><th>档位</th><th>温度上限</th><th>风扇上限</th><th>功率预算（相对）</th><th>噪声</th></tr>
+  <tr><td><span class="pill silent">静音</span></td><td>88℃</td><td>55%</td><td>最低</td><td>最低</td></tr>
+  <tr><td><span class="pill balanced">平衡</span></td><td>88℃</td><td>75%</td><td>中</td><td>中</td></tr>
+  <tr><td><span class="pill perf">性能</span></td><td>90℃</td><td>100%</td><td>最高</td><td>最高</td></tr>
+</table>
+<p class="hl">关键：性能档的功率预算<b>最高</b>。它靠「风扇 100%（R2 最小）+ 允许温度到 90℃」把预算做大，而不是把温度压到最低。静音与平衡共用 88℃ 上限，只靠风扇/EPP/PL2 区分——这样「想安静」不会顺带把性能削掉。</p><p class="note">v1.3 曾把性能档温度设为 75℃（三档最低），结果 P_budget=(75−24)/R 也是三档最小，「性能模式」反而风扇最响、功率最低、频率最低。v1.4 已修正。</p>
+
+<h3>默认平衡档的「噪声别太大太久」如何落地</h3>
+<p>平衡档（默认）通过三个旋钮实现「保持性能 + 噪声可控」：</p>
+<ul>
+  <li><b>风扇上限 75%</b>——不超过 75% 占空比，避免全速呼啸；</li>
+  <li><b>温度上限 88℃</b>——与静音档同一条上限，但风扇更积极（75% vs 55%），所以实际温度更低、功率预算更大；</li>
+  <li><b>空闲风扇 30%</b>——低负载时风扇降到底速，<span class="hl">噪声不会「持续太久」</span>，只在真正发热时才提速。</li>
+</ul>
+
+<h3>三档旋钮如何落到硬件：精细调控优先级</h3>
+<p>上一版的「功率预算」只是抽象目标，真正生效的是 CPU/GPU 的 MSR/驱动级控制字。关键纠偏：
+本机实测 <code>powercfg PROCTHROTTLEMAX</code> <b>无效</b>（写值读得回，CPU 不认），
+<code>Windows 电源管理只是粗层且在本机失效</code>；真正能精细平衡性能和散热的是
+<code>ThrottleStop/直接写 MSR</code>（CPU 第 2 层）与 <code>nvidia-smi/Afterburner</code>（GPU 第 3 层），
+<code>PL1/PL2/Time</code>（MSR 0x610）、<b>降压</b>（MSR 0x150）、<b>Speed Shift EPP</b>（MSR 0x773）。
+以下 6 个旋钮按「性能代价最小」逐级动用（GPU 单独在第 3 层，见下方）：</p>
+
+<div class="figure">
+<svg viewBox="0 0 680 290" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <text x="24" y="32" font-size="15" font-weight="600" fill="#333">求解顺序：先动「无损/低损」的，最后才硬削性能</text>
+
+  <!-- chain of 6 levers -->
+  <g font-size="11.5" text-anchor="middle">
+    <!-- ① undervolt -->
+    <rect x="16" y="58" width="98" height="76" rx="9" fill="#E1F5EE" stroke="#1D9E75"/>
+    <text x="65" y="82" font-weight="600" fill="#085041">① 降压</text>
+    <text x="65" y="101" fill="#0F6E56">P∝V²·f</text>
+    <text x="65" y="119" fill="#0F6E56">无损·首选</text>
+    <!-- ② fan -->
+    <rect x="120" y="58" width="98" height="76" rx="9" fill="#E6F1FB" stroke="#378ADD"/>
+    <text x="169" y="82" font-weight="600" fill="#0C447C">② 风扇</text>
+    <text x="169" y="101" fill="#185FA5">降 R2</text>
+    <text x="169" y="119" fill="#185FA5">只增噪声</text>
+    <!-- ③ EPP -->
+    <rect x="224" y="58" width="98" height="76" rx="9" fill="#EEEDFE" stroke="#7F77DD"/>
+    <text x="273" y="82" font-weight="600" fill="#3C3489">③ EPP</text>
+    <text x="273" y="101" fill="#3C3489">软偏置选频</text>
+    <text x="273" y="119" fill="#3C3489">近似无损</text>
+    <!-- ④ PL1 -->
+    <rect x="328" y="58" width="98" height="76" rx="9" fill="#FAEEDA" stroke="#BA7517"/>
+    <text x="377" y="82" font-weight="600" fill="#633806">④ PL1 硬闸</text>
+    <text x="377" y="101" fill="#633806">持续上限</text>
+    <text x="377" y="119" fill="#633806">牺牲性能</text>
+    <!-- ⑤ PL2 -->
+    <rect x="432" y="58" width="98" height="76" rx="9" fill="#FCEBEB" stroke="#E24B4A"/>
+    <text x="481" y="82" font-weight="600" fill="#791F1F">⑤ PL2 突增</text>
+    <text x="481" y="101" fill="#A32D2D">burst 多高</text>
+    <text x="481" y="119" fill="#A32D2D">与⑥独立</text>
+    <!-- ⑥ Time -->
+    <rect x="536" y="58" width="98" height="76" rx="9" fill="#FBE3F1" stroke="#C24BA0"/>
+    <text x="585" y="82" font-weight="600" fill="#7A1F63">⑥ Time/τ</text>
+    <text x="585" y="101" fill="#A32D7C">burst 多久</text>
+    <text x="585" y="119" fill="#A32D7C">管噪声久</text>
+
+    <line x1="114" y1="96" x2="120" y2="96" stroke="#888" stroke-width="1.5" marker-end="url(#b)"/>
+    <line x1="218" y1="96" x2="224" y2="96" stroke="#888" stroke-width="1.5" marker-end="url(#b)"/>
+    <line x1="322" y1="96" x2="328" y2="96" stroke="#888" stroke-width="1.5" marker-end="url(#b)"/>
+    <line x1="426" y1="96" x2="432" y2="96" stroke="#888" stroke-width="1.5" marker-end="url(#b)"/>
+    <line x1="530" y1="96" x2="536" y2="96" stroke="#888" stroke-width="1.5" marker-end="url(#b)"/>
+  </g>
+
+  <text x="24" y="172" font-size="13" font-weight="600" fill="#333">物理关系</text>
+  <text x="24" y="194" font-size="12" fill="#444" font-family="monospace">P(V,f) ≈ P_static + (P_dem−P_static)·(V/V0)²·(f/f0)·epp_k</text>
+  <text x="24" y="216" font-size="12" fill="#444" font-family="monospace">T_ss = T_amb + (R1 + R2(fan))·P_op   ,   P_op = min(需求经降压/降频/EPP , PL1)</text>
+
+  <text x="24" y="244" font-size="12" fill="#666">性能档 ≠ 功率最高，而是温度最低：压温度=限发热，功率预算反而最低。</text>
+  <text x="24" y="266" font-size="12" fill="#666">GPU（第 3 层）独立于 CPU：功率墙% / 频率偏移 / 温度目标，走 nvidia-smi / Afterburner，给共享散热腾 CPU 余量。</text>
+</svg>
+<div class="cap">图 · 精细调控优先级：①降压（无损）→ ②风扇（只增噪）→ ③EPP（软）→ ④PL1（硬削频）→ ⑤PL2（突增多高，与⑥独立）→ ⑥Time/τ（持续多久，与⑤独立）</div>
+</div>
+
+<div class="card">
+<p><b>控制面分层（哪些参数软件可控，哪些不可控）：</b></p>
+<table>
+  <tr><th>层</th><th>名称</th><th>可控</th><th>工具</th><th>说明</th></tr>
+  <tr><td>0</td><td>硬件固有</td><td>❌</td><td>物理换件</td><td>TDP / R1(硅脂) / 散热模组 —— 软件只能识别或绕开（如 deep1 靠降功率）</td></tr>
+  <tr><td>1</td><td>Windows 电源管理（粗）</td><td>✅</td><td>powercfg</td><td>本机 PROCTHROTTLEMAX 实测无效，粗杠杆</td></tr>
+  <tr><td>2</td><td><b>CPU 精细调控（细）★主力</b></td><td>✅</td><td>ThrottleStop / MSR</td><td>降压0x150 / PL1·PL2·Time 0x610 / EPP 0x773 / 睿频倍率 0x1AD</td></tr>
+  <tr><td>3</td><td><b>GPU 精细调控（细）</b></td><td>✅</td><td>nvidia-smi / Afterburner</td><td>功率墙% / 频率偏移 / 电压曲线 / 温度目标（独立于 CPU）</td></tr>
+  <tr><td>4</td><td>外部（仅识别）</td><td>❌</td><td>—</td><td>环境温度 / 散热底座·支架 —— 改不了，只当输入或建议</td></tr>
+</table>
+<p class="hl">一句话：<b>异常识别跑在「出厂默认逻辑」（第 1 层）只观察；调控伸到第 2/3 层 MSR/驱动级，而不是只有 Windows 自带的电源管理。</b> 第 0/4 层不可软件控制，只能物理改或当输入。</p>
+</div>
+
+<div class="card">
+<p><b>真实机 deep1（R1=1.76 硅脂断链）求解结果</b>（<code>tools/control_model.py</code>）：</p>
+<table>
+  <tr><th>档位</th><th>降压</th><th>风扇≤</th><th>EPP</th><th>PL1</th><th>预测温度</th><th>预测性能</th></tr>
+  <tr><td><span class="pill silent">静音</span></td><td>−80mV</td><td>55%</td><td>200</td><td>—</td><td>87.7℃</td><td>100%</td></tr>
+  <tr><td><span class="pill balanced">平衡</span></td><td>−80mV</td><td>75%</td><td>49</td><td>—</td><td>82.0℃</td><td>92%</td></tr>
+  <tr><td><span class="pill perf">性能</span></td><td>−80mV</td><td>100%</td><td>111</td><td>—</td><td>75.0℃</td><td>83%</td></tr>
+</table>
+<p class="hl">核心发现：这台机器靠 <b>−80mV 降压</b> 就把 96.7℃ 压到 87.7℃ 且 <b>性能 100%、风扇仅 55%</b>——
+降压是「性能无损降温」的救命杠杆；只有在温度上限用尽、仍超温时才动 EPP 软调，最后才用 PL1 硬削频。</p>
+</div>
+
+<h2>四、完整闭环：本机实测示例</h2>
+<div class="card">
+<p>输入：<code>lab-data/lab-deep1-20261028-191903.csv</code>（本机 19 分钟实测）</p>
+<div class="verdict tim">判定：TIM/压装断链（重度）· R1 = 1.76 K/W</div>
+<table>
+  <tr><th>档位</th><th>温度上限</th><th>风扇≤</th><th>功率预算</th><th>说明</th></tr>
+  <tr><td>静音 ←推荐</td><td>88℃</td><td>55%</td><td>29.9W</td><td>故障未修前，静音保命</td></tr>
+  <tr><td>平衡</td><td>88℃</td><td>75%</td><td>30.4W</td><td>—</td></tr>
+  <tr><td>性能</td><td>90℃</td><td>100%</td><td>32.0W</td><td>—</td></tr>
+</table>
+<p><b>为什么推荐静音？</b>因为 R1 已重度断链，风扇对 R2 的作用被「卡死」的 R1 挡住，硬拉风扇只增噪声不降温。此时最合理的是静音档：限功率（29.9W）、压风扇（≤55%），把机器稳定在 88℃ 以内运行，同时噪声最低，直到用户换硅脂。注意三档预算只差 29.9 / 30.4 / 32.0W——R1 断了以后风扇几乎挣不到余量，这也是"该换硅脂"的直接证据。</p>
+<p><b>健康机的对比</b>（sim-healthy，R1=0.21）：三档功率预算分别是 108.3W / 115.3W / 129.4W（静音/平衡/性能），单调递增——R1 正常时风扇才真的有用，性能档靠"满转速 + 90℃ 上限"把预算做到最大。</p>
+</div>
+
+<h2>五、代码入口</h2>
+<div class="card">
+<div class="formula">python tools/thermal_policy.py lab-data/xxx.csv --design-w 50 --tamb 24
+# 输出：判定 + 场景 + 推荐档 + 三档温度上限/风扇/功率预算</div>
+<p>一站式调用：</p>
+<div class="formula">from thermal_policy import solve
+res, policy = solve("lab-data/xxx.csv", design_w=50, t_amb=24)
+# res = 检测结果（verdict/scene/features）
+# policy = 三档策略（recommended + profiles 三档旋钮）</div>
+<p>检测模块 <code>tools/detect.py</code>、精细调控求解器 <code>tools/control_model.py</code> 与策略引擎
+<code>tools/thermal_policy.py</code> 均为纯函数、无副作用，可直接集成到产品运行时。独立跑精细调控求解：</p>
+<div class="formula">python tools/control_model.py lab-data/xxx.csv --mode balanced --design-w 50 --tamb 24
+# 输出：降压 mV / EPP / PL1 / PL2 / tau / 等效频限 / 预测温度 / 预测性能 / 分步说明</div>
+</div>
+
+</div>
+</body>
+</html>

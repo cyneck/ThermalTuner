@@ -1,0 +1,11 @@
+{
+  "name": "quick-3min-v1",
+  "note": "3 分钟极限快测：只能看趋势与量级，段短到 0.44τ，不要用它建控制表。",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "Q0", "label": "空闲基线", "sec": 20, "load": "idle", "cap": 100 },
+    { "id": "Q1", "label": "满载 cap100", "sec": 80, "load": "cpu", "cap": 100 },
+    { "id": "Q2", "label": "满载 cap50", "sec": 45, "load": "cpu", "cap": 50 },
+    { "id": "Q3", "label": "冷却", "sec": 35, "load": "idle", "cap": 100 }
+  ]
+}

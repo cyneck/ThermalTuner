@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>瞬态辨识 · deep1-20261028-191903</title>
+<style>
+:root{--bg:#0f1620;--card:#16202c;--line:#243244;--fg:#e6eef7;--mut:#8b9bb0;
+--acc:#4fb0c6;--warn:#e0a45c;--ok:#5fb87a;--bad:#c9736a;}
+*{box-sizing:border-box}
+body{margin:0;padding:28px;background:var(--bg);color:var(--fg);
+font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+h1{font-size:22px;font-weight:600;margin:0 0 4px}
+h2{font-size:15px;font-weight:600;margin:28px 0 12px;color:var(--acc);
+letter-spacing:.02em;border-left:3px solid var(--acc);padding-left:9px}
+.sub{color:var(--mut);font-size:12.5px;margin-bottom:22px}
+.kpi{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.k{background:var(--card);border:1px solid var(--line);border-radius:9px;
+padding:13px 17px;min-width:150px}
+.k .lb{color:var(--mut);font-size:11.5px}
+.k .vl{font-size:21px;font-weight:600;margin-top:3px}
+.k .vl small{font-size:11.5px;color:var(--mut);font-weight:400}
+table{border-collapse:collapse;width:100%;background:var(--card);
+border:1px solid var(--line);border-radius:9px;overflow:hidden;font-size:12.5px}
+th{background:#1b2735;color:var(--mut);font-weight:500;text-align:left;
+padding:8px 10px;font-size:11.5px;white-space:nowrap}
+td{padding:7px 10px;border-top:1px solid var(--line)}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+tr.warn td{background:rgba(224,164,92,.08)}
+tr.warn td.delt{color:var(--warn)}
+ul{margin:0;padding-left:20px} li{margin:4px 0}
+li.warn{color:var(--warn)} li.ok{color:var(--ok)} li.dim{color:var(--mut);font-size:12.5px}
+.chart{display:flex;align-items:flex-end;gap:26px;height:210px;
+background:var(--card);border:1px solid var(--line);border-radius:9px;
+padding:20px 24px 10px;margin-top:6px}
+.bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;
+align-items:center;height:100%}
+.bfill{width:100%;max-width:64px;background:linear-gradient(180deg,#4fb0c6,#2b6f80);
+border-radius:4px 4px 0 0;transition:height .3s}
+.bval{font-size:12px;color:var(--fg);margin-bottom:3px;font-variant-numeric:tabular-nums}
+.blab{font-size:11px;color:var(--mut);margin-top:6px}
+.note{background:rgba(224,164,92,.1);border:1px solid rgba(224,164,92,.28);
+border-radius:8px;padding:11px 14px;color:#e8c9a0;font-size:12.5px;margin-top:14px}
+</style></head><body>
+<h1>瞬态辨识 · deep1-20261028-191903</h1>
+<div class="sub">5 段 / 共 19.4 分钟 ·
+温度列来自升降温轨迹外推，<b>不是实测稳态</b></div>
+
+<div class="kpi">
+  <div class="k"><div class="lb">热时间常数 τ</div>
+    <div class="vl">4 <small>s</small></div></div>
+  <div class="k"><div class="lb">热阻 R_th</div>
+    <div class="vl">1.999 <small>℃/W</small></div></div>
+  <div class="k"><div class="lb">T₀（P=0 截距）</div>
+    <div class="vl">26.3 <small>℃</small></div></div>
+  <div class="k"><div class="lb">线性性 最大残差</div>
+    <div class="vl">3.91
+    <small>不足</small></div></div>
+</div>
+
+<h2>每段外推</h2>
+<table><tr><th>段</th><th>cap</th><th>负载</th><th>时长</th><th>功耗 W</th>
+<th>渐近温度 A</th><th>±95%</th><th>τ s</th><th>τ 覆盖</th><th>尾均值</th><th>偏差</th></tr>
+<tr class=''><td>D0</td><td>100%</td><td>idle</td><td>89s</td><td>10.5</td><td class='num'><b>43.40</b></td><td class='num'>±1.08</td><td class='num'>4</td><td class='num'>23.03</td><td class='num'>44.86</td><td class='num delt'>-1.46</td></tr><tr class=''><td>D1</td><td>100%</td><td>cpu</td><td>298s</td><td>35.8</td><td class='num'><b>95.67</b></td><td class='num'>±0.23</td><td class='num'>42</td><td class='num'>7.01</td><td class='num'>96.09</td><td class='num delt'>-0.41</td></tr><tr class='warn'><td>D2</td><td>70%</td><td>cpu</td><td>239s</td><td>34.9</td><td class='num'><b>97.71</b></td><td class='num'>±1.46</td><td class='num'>391</td><td class='num'>0.61</td><td class='num'>96.89</td><td class='num delt'>+0.81</td></tr><tr class=''><td>D3</td><td>40%</td><td>cpu</td><td>240s</td><td>34.9</td><td class='num'><b>96.92</b></td><td class='num'>±0.14</td><td class='num'>4</td><td class='num'>61.75</td><td class='num'>96.98</td><td class='num delt'>-0.06</td></tr><tr class='warn'><td>D4</td><td>100%</td><td>idle</td><td>300s</td><td>10.7</td><td class='num'><b>48.63</b></td><td class='num'>±0.71</td><td class='num'>4</td><td class='num'>77.21</td><td class='num'>47.78</td><td class='num delt'>+0.85</td></tr></table>
+<div class="note">τ 覆盖 &lt; 0.7 的段（黄底）外推距离超过一个时间常数，
+区间会被放大；"偏差"= 渐近值 − 段尾均值，即不做外推时的系统误差。</div>
+
+<h2>外推后的稳态温度</h2>
+<div class='chart'><div class='cline'></div><div class='bar'><div class='bfill' style='height:71px'></div><div class='bval'>43.4</div><div class='blab'>10W</div></div><div class='bar'><div class='bfill' style='height:157px'></div><div class='bval'>95.7</div><div class='blab'>36W</div></div><div class='bar'><div class='bfill' style='height:160px'></div><div class='bval'>97.7</div><div class='blab'>35W</div></div><div class='bar'><div class='bfill' style='height:159px'></div><div class='bval'>96.9</div><div class='blab'>35W</div></div><div class='bar'><div class='bfill' style='height:80px'></div><div class='bval'>48.6</div><div class='blab'>11W</div></div></div>
+
+<h2>判断</h2>
+<ul><li class='warn'>以下段的 τ 不可辨识（段太短或几乎平直，τ 顶到搜索边界）：D4 —— 它们的 A 取段内均值，若该段本来已接近稳态则无妨，否则 A 会明显偏低</li><li class='warn'>A = T₀ + R·P 的最大残差 3.91℃（>1℃），线性稳态形式不足 —— 应改用二次或按风扇分档的 R_th</li><li class='dim'>若直接取段尾均值（最常见做法），最大偏差 -1.46℃ —— 这就是短实验不做外推时引入的系统误差</li></ul>
+</body></html>

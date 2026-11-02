@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>可辨识性预判 · bios</title>
+<style>
+body{margin:0;padding:28px 22px;background:#0a0e16;color:#d7dce6;
+ font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.6}
+h1{font-size:20px;margin:0 0 4px;font-weight:600}
+h2{font-size:14px;margin:26px 0 10px;color:#9aa6bb;font-weight:600;
+ letter-spacing:.4px;text-transform:uppercase}
+.sub{color:#6b7688;font-size:12.5px;margin-bottom:18px}
+.wrap{max-width:760px;margin:0 auto}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+th{text-align:left;color:#7b879c;font-weight:500;font-size:11.5px;
+ padding:6px 8px;border-bottom:1px solid #232b3d;text-transform:uppercase;letter-spacing:.3px}
+td{padding:7px 8px;border-bottom:1px solid #171d29}
+tr.warn td{background:#2a1f14}
+.warn{color:#e0a45c} .dim{color:#5d6879}
+.go{color:#5fb87a} .stop{color:#c9736a} .tax{color:#e0a45c}
+.box{border-left:3px solid #4fb0c6;padding:10px 14px;background:#111823;
+ border-radius:0 6px 6px 0;margin-top:12px;font-size:13px}
+.box.stop{border-color:#c9736a} .box.go{border-color:#5fb87a} .box.tax{border-color:#e0a45c}
+.meta{display:flex;gap:26px;flex-wrap:wrap;font-size:12.5px;color:#8b95a8;
+ margin:14px 0 0;padding:12px 16px;background:#111823;border-radius:8px}
+.meta b{color:#d7dce6;font-weight:600}
+</style></head><body><div class="wrap">
+<h1>可辨识性预判 · BIOS 模式</h1>
+<div class="sub">lab-demo-bios.csv · 满载 6 阶段
+</div>
+<div class="meta">
+<div>模型 <b>T=a+b·P+c·P²</b></div>
+<div>自由度为 <b>3</b></div>
+<div>残差 σ <b>1.063℃</b></div>
+<div>条件数 <b>11.8</b></div>
+<div>每档耗时 <b>129s</b></div>
+</div>
+<h2>误差地形</h2>
+<svg viewBox="0 0 660 300" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif;width:100%;height:auto">
+<rect x="0" y="0" width="660" height="300" fill="#0f1420" rx="10"/>
+<line x1="56" y1="242.0" x2="644" y2="242.0" stroke="#232b3d" stroke-width="1"/>
+<text x="48" y="246.0" fill="#8b95a8" font-size="11" text-anchor="end">65℃</text>
+<line x1="56" y1="176.4" x2="644" y2="176.4" stroke="#232b3d" stroke-width="1"/>
+<text x="48" y="180.4" fill="#8b95a8" font-size="11" text-anchor="end">70℃</text>
+<line x1="56" y1="110.7" x2="644" y2="110.7" stroke="#232b3d" stroke-width="1"/>
+<text x="48" y="114.7" fill="#8b95a8" font-size="11" text-anchor="end">75℃</text>
+<line x1="56" y1="45.1" x2="644" y2="45.1" stroke="#232b3d" stroke-width="1"/>
+<text x="48" y="49.1" fill="#8b95a8" font-size="11" text-anchor="end">80℃</text>
+<text x="97.0" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">30%</text>
+<text x="165.4" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">40%</text>
+<text x="233.8" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">50%</text>
+<text x="302.1" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">60%</text>
+<text x="370.5" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">70%</text>
+<text x="438.9" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">80%</text>
+<text x="507.3" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">90%</text>
+<text x="575.6" y="278" fill="#8b95a8" font-size="11" text-anchor="middle">100%</text>
+<text x="56" y="16" fill="#7b879c" font-size="11">误差棒 = 该点 95% 预测区间（反解落点）</text>
+<line x1="507.3" y1="233.7" x2="507.3" y2="126.9" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="501.3" y1="233.7" x2="513.3" y2="233.7" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="501.3" y1="126.9" x2="513.3" y2="126.9" stroke="#4fb0c6" stroke-width="2"/>
+<circle cx="507.3" cy="180.3" r="3.5" fill="#4fb0c6"/>
+<text x="507.3" y="170.3" fill="#4fb0c6" font-size="10.5" text-anchor="middle">≤70℃</text>
+<line x1="541.4" y1="192.7" x2="541.4" y2="86.6" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="535.4" y1="192.7" x2="547.4" y2="192.7" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="535.4" y1="86.6" x2="547.4" y2="86.6" stroke="#4fb0c6" stroke-width="2"/>
+<circle cx="541.4" cy="139.6" r="3.5" fill="#4fb0c6"/>
+<text x="541.4" y="129.6" fill="#4fb0c6" font-size="10.5" text-anchor="middle">≤75℃</text>
+<line x1="575.6" y1="154.8" x2="575.6" y2="48.3" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="569.6" y1="154.8" x2="581.6" y2="154.8" stroke="#4fb0c6" stroke-width="2"/>
+<line x1="569.6" y1="48.3" x2="581.6" y2="48.3" stroke="#4fb0c6" stroke-width="2"/>
+<circle cx="575.6" cy="101.6" r="3.5" fill="#4fb0c6"/>
+<text x="575.6" y="91.6" fill="#4fb0c6" font-size="10.5" text-anchor="middle">≤80/85/90℃</text>
+<rect x="131.2" y="22" width="444.4" height="238" fill="#4fb0c6" opacity="0.06"/>
+<text x="135.2" y="252" fill="#4a5568" font-size="10">已测范围</text>
+<line x1="56" y1="260" x2="644" y2="260" stroke="#33405c"/>
+<line x1="56" y1="22" x2="56" y2="260" stroke="#33405c"/>
+<text x="350.0" y="294" fill="#8b95a8" font-size="11" text-anchor="middle">处理器上限 cap (%)</text>
+</svg>
+<h2>目标温度处的预测能力</h2>
+<p class=dim style="font-size:12px;margin:0 0 4px">
+性能cap = 点估计刚好达标的最激进设置；保守cap = 留出不确定性裕量后超温≤10% 的设置；
+两者之差（红色）就是「模型不确定性收的税」。</p>
+<table><tr><th>目标</th><th>性能 cap</th><th>保守 cap</th><th>预测稳态</th>
+<th>95% 预测区间</th><th>超温概率</th></tr><tr class=''><td>70℃</td><td>90%</td><td>85% <span class='warn'>−5%</span></td><td>69.7℃</td><td>±4.07℃</td><td>40.2%</td></tr><tr class=''><td>75℃</td><td>95%</td><td>95%</td><td>72.8℃</td><td>±4.04℃</td><td>8.9%</td></tr><tr class=''><td>80℃</td><td>100%</td><td>100%</td><td>75.7℃</td><td>±4.06℃</td><td>2.2%</td></tr><tr class=''><td>85℃</td><td>100%</td><td>100%</td><td>75.7℃</td><td>±4.06℃</td><td>0.3%</td></tr><tr class=''><td>90℃</td><td>100%</td><td>100%</td><td>75.7℃</td><td>±4.06℃</td><td>0.1%</td></tr></table>
+<h2>下一档推荐</h2>
+<table><tr><th>序</th><th>cap</th><th>fan</th><th>稳态功耗</th>
+<th>最差区间</th><th>收窄到</th><th>相对</th><th>每 100s</th></tr><tr><td>1</td><td>90%</td><td>0%</td><td>28.4 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.38℃</td><td>−17%</td><td>0.54</td></tr><tr><td>2</td><td>85%</td><td>0%</td><td>25.4 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.39℃</td><td>−17%</td><td>0.53</td></tr><tr><td>3</td><td>95%</td><td>0%</td><td>31.4 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.39℃</td><td>−17%</td><td>0.53</td></tr><tr><td>4</td><td>75%</td><td>0%</td><td>21.0 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.44℃</td><td>−16%</td><td>0.49</td></tr><tr><td>5</td><td>70%</td><td>0%</td><td>19.6 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.47℃</td><td>−15%</td><td>0.47</td></tr><tr><td>6</td><td>30%</td><td>0%</td><td>9.9 W</td><td>±4.07℃ <span class='dim'>(70℃)</span></td><td>±3.49℃</td><td>−14%</td><td>0.45</td></tr></table>
+<h2>序贯路线图</h2>
+<table><tr><th>步</th><th>cap</th><th>fan</th><th>累计耗时</th>
+<th>瓶颈区间</th><th>相对</th></tr><tr><td>1</td><td>90%</td><td>0%</td><td>2m09s</td><td>±4.07 → ±3.38℃</td><td>17%</td></tr><tr><td>2</td><td>95%</td><td>0%</td><td>4m18s</td><td>±3.43 → ±3.09℃</td><td>10%</td></tr><tr><td>3</td><td>85%</td><td>0%</td><td>6m27s</td><td>±3.09 → ±2.93℃</td><td>5%</td></tr><tr><td>4</td><td>30%</td><td>0%</td><td>8m36s</td><td>±2.93 → ±2.83℃</td><td>4%</td></tr><tr><td>5</td><td>75%</td><td>0%</td><td>10m45s</td><td>±2.83 → ±2.76℃</td><td>2%</td></tr></table>
+<div class="box tax"><b>先收紧策略</b>：精度改善已经很有限，但 **70℃ 目标目前不安全**：cap 90% 的预测是 69.7℃，区间 ±4.07℃，超温概率 40%。建议改为 cap 85%（预测 66.3℃，超温 ≤10%）——这 5% 的性能就是模型不确定性收的税。想把这税拿回来，得靠更准的模型（或压噪声），不是继续加档</div>
+<p class="dim" style="font-size:11.5px;margin-top:22px">
+方法：Fisher 信息矩阵 + Sherman–Morrison 增量更新；区间用学生 t 分布（小样本自由度不可省）；
+评分 = 目标温度集合上预测区间半宽的降低量 / 该档耗时。σ 假定不随新增点变化（乐观假设）。
+</p>
+</div></body></html>

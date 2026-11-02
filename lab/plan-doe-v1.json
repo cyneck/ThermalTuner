@@ -1,0 +1,14 @@
+{
+  "name": "doe-cap-ladder-v1",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "S0", "label": "空闲基线（取环境热平衡参考点）", "sec": 90,  "load": "idle", "cap": 100 },
+    { "id": "S1", "label": "满载 cap35（≈1.0GHz，最低功耗点）", "sec": 130, "load": "cpu",  "cap": 35 },
+    { "id": "S2", "label": "满载 cap50", "sec": 130, "load": "cpu", "cap": 50 },
+    { "id": "S3", "label": "满载 cap65", "sec": 130, "load": "cpu", "cap": 65 },
+    { "id": "S4", "label": "满载 cap80", "sec": 130, "load": "cpu", "cap": 80 },
+    { "id": "S5", "label": "满载 cap100（Turbo 开，最高功耗点）", "sec": 200, "load": "cpu", "cap": 100 },
+    { "id": "S6", "label": "满载 cap100 + Turbo 关闭（单独分离 Turbo 影响）", "sec": 130, "load": "cpu", "cap": 100, "boost": 0 },
+    { "id": "S7", "label": "冷却（估热时间常数 τ）", "sec": 130, "load": "idle", "cap": 100 }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "quick-5min-v1",
+  "note": "5 分钟快测：不等稳态，靠升降温轨迹外推（tools/lab_transient.py）。段分配是离线验证搜出来的。",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "Q0", "label": "空闲基线（定初始条件）", "sec": 20, "load": "idle", "cap": 100 },
+    { "id": "Q1", "label": "满载 cap100（最高功耗，给足时间收敛）", "sec": 150, "load": "cpu", "cap": 100 },
+    { "id": "Q2", "label": "满载 cap60（第二功率层级，分离 T₀ 与 R_th）", "sec": 60, "load": "cpu", "cap": 60 },
+    { "id": "Q3", "label": "冷却（纯指数衰减，辨识 τ 最干净）", "sec": 70, "load": "idle", "cap": 100 }
+  ]
+}

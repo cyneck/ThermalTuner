@@ -1,0 +1,174 @@
+{
+  "csv": "C:\\Users\\hp\\WorkBuddy\\2026-10-27-18-42-10\\ThermalPilot\\lab-data\\_q5demo\\lab-q5-20261028-1900.csv",
+  "tag": "q5-20261028-1900",
+  "total_s": 296.0,
+  "target_s": null,
+  "n_stages": 4,
+  "segments": [
+    {
+      "stage": "Q0",
+      "load": "idle",
+      "cap": 100.0,
+      "dur": 19.0,
+      "n": 20,
+      "P": 5.2,
+      "T0": 39.6,
+      "A": 40.13,
+      "A_half": 16.21,
+      "tau": 3.9,
+      "tau_ci": [
+        3.9,
+        873.4
+      ],
+      "tau_covered": 4.89,
+      "sigma": 0.376,
+      "at_bound": false,
+      "flat": true,
+      "naive_tail": 40.06,
+      "naive_bias": 0.07,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "Q1",
+      "load": "cpu",
+      "cap": 100.0,
+      "dur": 149.0,
+      "n": 150,
+      "P": 40.0,
+      "T0": 41.1,
+      "A": 80.43,
+      "A_half": 0.1,
+      "tau": 52.2,
+      "tau_ci": [
+        52.2,
+        52.2
+      ],
+      "tau_covered": 2.85,
+      "sigma": 0.375,
+      "at_bound": false,
+      "flat": false,
+      "naive_tail": 76.69,
+      "naive_bias": 3.74,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "Q2",
+      "load": "cpu",
+      "cap": 60.0,
+      "dur": 59.0,
+      "n": 60,
+      "P": 16.9,
+      "T0": 77.9,
+      "A": 55.54,
+      "A_half": 0.34,
+      "tau": 64.4,
+      "tau_ci": [
+        55.4,
+        77.1
+      ],
+      "tau_covered": 0.92,
+      "sigma": 0.337,
+      "at_bound": false,
+      "flat": false,
+      "naive_tail": 66.11,
+      "naive_bias": -10.57,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "Q3",
+      "load": "idle",
+      "cap": 100.0,
+      "dur": 69.0,
+      "n": 70,
+      "P": 5.2,
+      "T0": 64.4,
+      "A": 39.49,
+      "A_half": 0.32,
+      "tau": 71.3,
+      "tau_ci": [
+        63.3,
+        82.9
+      ],
+      "tau_covered": 0.97,
+      "sigma": 0.359,
+      "at_bound": false,
+      "flat": false,
+      "naive_tail": 50.55,
+      "naive_bias": -11.06,
+      "fan_pct": 0.0
+    }
+  ],
+  "shared_tau": {
+    "tau": 52.7,
+    "sigma": 0.379,
+    "dof": 292
+  },
+  "indep_taus": [
+    3.9,
+    52.2,
+    64.4,
+    71.3
+  ],
+  "f_shared_vs_indep": 25.4,
+  "shared_ok": false,
+  "steady_model": {
+    "Tamb": 34.46869257299581,
+    "R": 1.1502197301343284,
+    "Tamb_ci": [
+      33.12001268297803,
+      35.8173724630136
+    ],
+    "R_ci": [
+      1.1138381927504601,
+      1.1866012675181967
+    ],
+    "chi2_per_dof": 16.13976269852743,
+    "resid_max": 1.6325939877340332,
+    "linear_ok": false,
+    "resid": [
+      -0.32,
+      -0.05,
+      1.63,
+      -0.96
+    ],
+    "Tamb_ols": 34.255423366682464,
+    "R_ols": 1.1674339752343263,
+    "points": [
+      {
+        "P": 5.2,
+        "A": 40.13,
+        "half": 16.21,
+        "stage": "Q0"
+      },
+      {
+        "P": 40.0,
+        "A": 80.43,
+        "half": 0.1,
+        "stage": "Q1"
+      },
+      {
+        "P": 16.9,
+        "A": 55.54,
+        "half": 0.34,
+        "stage": "Q2"
+      },
+      {
+        "P": 5.2,
+        "A": 39.49,
+        "half": 0.32,
+        "stage": "Q3"
+      }
+    ]
+  },
+  "verdict": {
+    "usable": false,
+    "issues": [
+      "A = T₀ + R·P 的最大残差 1.63℃（>1℃），线性稳态形式不足 —— 应改用二次或按风扇分档的 R_th"
+    ],
+    "notes": [
+      "逐段 τ 差异显著（共享 τ 的 F=25.4），说明 τ 随工况变化 —— 这是真的（风扇转速变→散热能力变），所以 A 用的是逐段 τ 而不是共享 τ",
+      "若直接取段尾均值（最常见做法），最大偏差 -11.06℃ —— 这就是短实验不做外推时引入的系统误差"
+    ],
+    "min_tau_covered": 0.92
+  }
+}

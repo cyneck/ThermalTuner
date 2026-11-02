@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "source_csv": "lab-deep1-20261028-191903.csv",
+  "mode": "bios",
+  "fan_controllable": false,
+  "origin": "transient_extrapolated",
+  "features": [
+    "功耗 P (W)"
+  ],
+  "steady_model": {
+    "type": "stepwise",
+    "bins": [
+      [
+        0.0,
+        10.6,
+        43.4
+      ],
+      [
+        10.6,
+        22.8,
+        48.63
+      ],
+      [
+        22.8,
+        35.35,
+        97.71
+      ],
+      [
+        35.35,
+        null,
+        95.67
+      ]
+    ]
+  },
+  "inversion_model": "阶梯表（实测档位直接查表，档间不插值）",
+  "dynamic": {
+    "tau_s": 3.9,
+    "alpha": 0.22618
+  },
+  "control_ladder": [
+    {
+      "T_hi": 95,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 90,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 85,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 80,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 75,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 70,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 65,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 60,
+      "achievable": false,
+      "options": []
+    },
+    {
+      "T_hi": 55,
+      "achievable": false,
+      "options": []
+    }
+  ],
+  "reference": {
+    "T_base": 26.32,
+    "rth_closed_loop": 1.9989,
+    "note": "线性近似仅作参考；实际控制用阶梯表。残差大说明需要二次项",
+    "linear_resid_max_c": 3.91
+  },
+  "caps_measured": [
+    70,
+    40,
+    100
+  ],
+  "cap_power_map": {
+    "points": [
+      [
+        70,
+        34.9
+      ],
+      [
+        40,
+        34.9
+      ],
+      [
+        100,
+        35.8
+      ]
+    ],
+    "note": "仅实测 cap 有档位，中间不插值：cap→功耗受 Turbo 台阶与 P≈C·V²·f 影响强烈非线性，插值会偏 5℃ 量级"
+  },
+  "quality": {
+    "stages": 5,
+    "total_s": 1165.0,
+    "tau_s": 3.9,
+    "table": [
+      {
+        "cap": 70,
+        "P": 34.9,
+        "T_ss": 97.71,
+        "half": 1.46
+      },
+      {
+        "cap": 40,
+        "P": 34.9,
+        "T_ss": 96.92,
+        "half": 0.14
+      },
+      {
+        "cap": 100,
+        "P": 35.8,
+        "T_ss": 95.67,
+        "half": 0.23
+      }
+    ],
+    "note": "短时实验（未达稳态）：温度由升降温轨迹外推，误差约 1℃ 量级"
+  }
+}

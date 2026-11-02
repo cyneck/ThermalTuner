@@ -1,0 +1,205 @@
+{
+  "csv": "C:\\Users\\hp\\WorkBuddy\\2026-10-27-18-42-10\\ThermalPilot\\lab-data\\lab-deep1-20261028-191903.csv",
+  "tag": "deep1-20261028-191903",
+  "total_s": 1165.0,
+  "target_s": null,
+  "n_stages": 5,
+  "segments": [
+    {
+      "stage": "D0",
+      "load": "idle",
+      "cap": 100.0,
+      "dur": 89.4,
+      "n": 64,
+      "P": 10.5,
+      "T0": 63.0,
+      "A": 43.4,
+      "A_half": 1.08,
+      "tau": 3.9,
+      "tau_ci": [
+        3.9,
+        6.7
+      ],
+      "tau_covered": 23.03,
+      "sigma": 4.135,
+      "at_bound": false,
+      "flat": true,
+      "naive_tail": 44.86,
+      "naive_bias": -1.46,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "D1",
+      "load": "cpu",
+      "cap": 100.0,
+      "dur": 297.9,
+      "n": 165,
+      "P": 35.8,
+      "T0": 93.0,
+      "A": 95.67,
+      "A_half": 0.23,
+      "tau": 42.5,
+      "tau_ci": [
+        24.7,
+        79.9
+      ],
+      "tau_covered": 7.01,
+      "sigma": 1.241,
+      "at_bound": false,
+      "flat": true,
+      "naive_tail": 96.09,
+      "naive_bias": -0.41,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "D2",
+      "load": "cpu",
+      "cap": 70.0,
+      "dur": 238.7,
+      "n": 132,
+      "P": 34.9,
+      "T0": 96.0,
+      "A": 97.71,
+      "A_half": 1.46,
+      "tau": 391.0,
+      "tau_ci": [
+        30.3,
+        881.1
+      ],
+      "tau_covered": 0.61,
+      "sigma": 0.78,
+      "at_bound": false,
+      "flat": true,
+      "naive_tail": 96.89,
+      "naive_bias": 0.81,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "D3",
+      "load": "cpu",
+      "cap": 40.0,
+      "dur": 239.7,
+      "n": 132,
+      "P": 34.9,
+      "T0": 98.0,
+      "A": 96.92,
+      "A_half": 0.14,
+      "tau": 3.9,
+      "tau_ci": [
+        3.9,
+        873.4
+      ],
+      "tau_covered": 61.75,
+      "sigma": 0.772,
+      "at_bound": false,
+      "flat": true,
+      "naive_tail": 96.98,
+      "naive_bias": -0.06,
+      "fan_pct": 0.0
+    },
+    {
+      "stage": "D4",
+      "load": "idle",
+      "cap": 100.0,
+      "dur": 299.7,
+      "n": 213,
+      "P": 10.7,
+      "T0": 96.0,
+      "A": 48.63,
+      "A_half": 0.71,
+      "tau": 3.9,
+      "tau_ci": [
+        3.9,
+        4.5
+      ],
+      "tau_covered": 77.21,
+      "sigma": 5.164,
+      "at_bound": true,
+      "flat": false,
+      "naive_tail": 47.78,
+      "naive_bias": 0.85,
+      "fan_pct": 0.0
+    }
+  ],
+  "shared_tau": {
+    "tau": 3.9,
+    "sigma": 3.199,
+    "dof": 696
+  },
+  "indep_taus": [
+    3.9,
+    42.5,
+    391.0,
+    3.9,
+    3.9
+  ],
+  "f_shared_vs_indep": 2.83,
+  "shared_ok": true,
+  "steady_model": {
+    "Tamb": 26.321826168610784,
+    "R": 1.9989376254455635,
+    "Tamb_ci": [
+      23.61793894807352,
+      29.02571338914805
+    ],
+    "R_ci": [
+      1.9206076546006547,
+      2.077267596290472
+    ],
+    "chi2_per_dof": 48.08880912700519,
+    "resid_max": 3.910671235789202,
+    "linear_ok": false,
+    "resid": [
+      -3.91,
+      -2.21,
+      1.63,
+      0.84,
+      0.92
+    ],
+    "Tamb_ols": 24.2029018977588,
+    "R_ols": 2.060847716965347,
+    "points": [
+      {
+        "P": 10.5,
+        "A": 43.4,
+        "half": 1.08,
+        "stage": "D0"
+      },
+      {
+        "P": 35.8,
+        "A": 95.67,
+        "half": 0.23,
+        "stage": "D1"
+      },
+      {
+        "P": 34.9,
+        "A": 97.71,
+        "half": 1.46,
+        "stage": "D2"
+      },
+      {
+        "P": 34.9,
+        "A": 96.92,
+        "half": 0.14,
+        "stage": "D3"
+      },
+      {
+        "P": 10.7,
+        "A": 48.63,
+        "half": 0.71,
+        "stage": "D4"
+      }
+    ]
+  },
+  "verdict": {
+    "usable": false,
+    "issues": [
+      "以下段的 τ 不可辨识（段太短或几乎平直，τ 顶到搜索边界）：D4 —— 它们的 A 取段内均值，若该段本来已接近稳态则无妨，否则 A 会明显偏低",
+      "A = T₀ + R·P 的最大残差 3.91℃（>1℃），线性稳态形式不足 —— 应改用二次或按风扇分档的 R_th"
+    ],
+    "notes": [
+      "若直接取段尾均值（最常见做法），最大偏差 -1.46℃ —— 这就是短实验不做外推时引入的系统误差"
+    ],
+    "min_tau_covered": 77.21
+  }
+}

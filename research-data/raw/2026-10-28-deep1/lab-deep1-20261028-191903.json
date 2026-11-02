@@ -1,0 +1,81 @@
+{
+  "Name": "deep-cap3-v1",
+  "tag": "deep1",
+  "startedAt": "2026-10-28T19:38:44",
+  "cpu": "Intel64 Family 6 Model 158 Stepping 9, GenuineIntel",
+  "machine": "DESKTOP-L7BROMD",
+  "fanControl": true,
+  "rpm": false,
+  "stages": [
+    {
+      "Id": "D0",
+      "Label": "空闲基线（定初始条件与噪声底）",
+      "Sec": 90,
+      "Load": "idle",
+      "Cap": 100,
+      "Boost": null,
+      "Fan": null,
+      "start": "2026-10-28T19:19:05",
+      "end": "2026-10-28T19:20:36",
+      "elapsedStart": 0.3,
+      "elapsedEnd": 91.1,
+      "samples": 64
+    },
+    {
+      "Id": "D1",
+      "Label": "满载 cap100 Turbo 开（最高功耗，安全上最关键）",
+      "Sec": 300,
+      "Load": "cpu",
+      "Cap": 100,
+      "Boost": 2,
+      "Fan": null,
+      "start": "2026-10-28T19:20:36",
+      "end": "2026-10-28T19:25:36",
+      "elapsedStart": 91.4,
+      "elapsedEnd": 391.5,
+      "samples": 165
+    },
+    {
+      "Id": "D2",
+      "Label": "满载 cap70（第二功率层级）",
+      "Sec": 240,
+      "Load": "cpu",
+      "Cap": 70,
+      "Boost": 2,
+      "Fan": null,
+      "start": "2026-10-28T19:25:38",
+      "end": "2026-10-28T19:29:39",
+      "elapsedStart": 392.9,
+      "elapsedEnd": 633.7,
+      "samples": 132
+    },
+    {
+      "Id": "D3",
+      "Label": "满载 cap40（最低功耗层级，给线性拟合第三个点）",
+      "Sec": 240,
+      "Load": "cpu",
+      "Cap": 40,
+      "Boost": 2,
+      "Fan": null,
+      "start": "2026-10-28T19:29:40",
+      "end": "2026-10-28T19:33:42",
+      "elapsedStart": 635.3,
+      "elapsedEnd": 877.1,
+      "samples": 132
+    },
+    {
+      "Id": "D4",
+      "Label": "长冷却（纯指数衰减，tau 最干净）",
+      "Sec": 300,
+      "Load": "idle",
+      "Cap": 100,
+      "Boost": null,
+      "Fan": null,
+      "start": "2026-10-28T19:33:43",
+      "end": "2026-10-28T19:38:44",
+      "elapsedStart": 878.1,
+      "elapsedEnd": 1179.2,
+      "samples": 213
+    }
+  ]
+}

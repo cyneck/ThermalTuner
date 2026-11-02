@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "source_csv": "lab-q5-20261028-1900.csv",
+  "mode": "bios",
+  "fan_controllable": false,
+  "origin": "transient_extrapolated",
+  "features": [
+    "功耗 P (W)"
+  ],
+  "steady_model": {
+    "type": "stepwise",
+    "bins": [
+      [
+        0.0,
+        11.05,
+        40.13
+      ],
+      [
+        11.05,
+        28.45,
+        55.54
+      ],
+      [
+        28.45,
+        null,
+        80.43
+      ]
+    ]
+  },
+  "inversion_model": "阶梯表（实测档位直接查表，档间不插值）",
+  "dynamic": {
+    "tau_s": 52.7,
+    "alpha": 0.0188
+  },
+  "control_ladder": [
+    {
+      "T_hi": 95,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 0,
+          "pred_T": 80.4,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 90,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 0,
+          "pred_T": 80.4,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 85,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 100,
+          "fan": null,
+          "P": 40.0,
+          "f": 0,
+          "pred_T": 80.4,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 80,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 60,
+          "fan": null,
+          "P": 16.9,
+          "f": 0,
+          "pred_T": 55.5,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 75,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 60,
+          "fan": null,
+          "P": 16.9,
+          "f": 0,
+          "pred_T": 55.5,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 70,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 60,
+          "fan": null,
+          "P": 16.9,
+          "f": 0,
+          "pred_T": 55.5,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 65,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 60,
+          "fan": null,
+          "P": 16.9,
+          "f": 0,
+          "pred_T": 55.5,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 60,
+      "achievable": true,
+      "options": [
+        {
+          "cap": 60,
+          "fan": null,
+          "P": 16.9,
+          "f": 0,
+          "pred_T": 55.5,
+          "spl_delta_db": 0.0,
+          "mode": "唯一（风扇由固件控制）"
+        }
+      ]
+    },
+    {
+      "T_hi": 55,
+      "achievable": false,
+      "options": []
+    }
+  ],
+  "reference": {
+    "T_base": 34.47,
+    "rth_closed_loop": 1.1502,
+    "note": "线性近似仅作参考；实际控制用阶梯表。残差大说明需要二次项",
+    "linear_resid_max_c": 1.63
+  },
+  "caps_measured": [
+    60,
+    100
+  ],
+  "cap_power_map": {
+    "points": [
+      [
+        60,
+        16.9
+      ],
+      [
+        100,
+        40.0
+      ]
+    ],
+    "note": "仅实测 cap 有档位，中间不插值：cap→功耗受 Turbo 台阶与 P≈C·V²·f 影响强烈非线性，插值会偏 5℃ 量级"
+  },
+  "quality": {
+    "stages": 4,
+    "total_s": 296.0,
+    "tau_s": 52.7,
+    "table": [
+      {
+        "cap": 60,
+        "P": 16.9,
+        "T_ss": 55.54,
+        "half": 0.34
+      },
+      {
+        "cap": 100,
+        "P": 40.0,
+        "T_ss": 80.43,
+        "half": 0.1
+      }
+    ],
+    "note": "短时实验（未达稳态）：温度由升降温轨迹外推，误差约 1℃ 量级"
+  }
+}

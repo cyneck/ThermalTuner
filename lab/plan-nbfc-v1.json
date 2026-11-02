@@ -1,0 +1,19 @@
+{
+  "name": "doe-cap-fan-factorial-v1",
+  "sampleMs": 1000,
+  "stages": [
+    { "id": "D0", "label": "空闲基线 fan50", "sec": 90,  "load": "idle", "cap": 100, "fan": 50 },
+
+    { "id": "D1", "label": "cap100 fan90（高功耗高风量）", "sec": 170, "load": "cpu", "cap": 100, "fan": 90 },
+    { "id": "D2", "label": "cap100 fan70", "sec": 170, "load": "cpu", "cap": 100, "fan": 70 },
+    { "id": "D3", "label": "cap80  fan70", "sec": 170, "load": "cpu", "cap": 80,  "fan": 70 },
+    { "id": "D4", "label": "cap80  fan90（同功耗换散热，分离风扇增益）", "sec": 170, "load": "cpu", "cap": 80, "fan": 90 },
+    { "id": "D5", "label": "cap60  fan70", "sec": 170, "load": "cpu", "cap": 60,  "fan": 70 },
+    { "id": "D6", "label": "cap60  fan90", "sec": 170, "load": "cpu", "cap": 60,  "fan": 90 },
+    { "id": "D7", "label": "cap100 fan50（同一功耗下最低风量）", "sec": 170, "load": "cpu", "cap": 100, "fan": 50 },
+    { "id": "D8", "label": "cap80  fan50", "sec": 170, "load": "cpu", "cap": 80,  "fan": 50 },
+    { "id": "D9", "label": "cap60  fan50", "sec": 170, "load": "cpu", "cap": 60,  "fan": 50 },
+
+    { "id": "DZ", "label": "冷却 fan50", "sec": 150, "load": "idle", "cap": 100, "fan": 50 }
+  ]
+}
