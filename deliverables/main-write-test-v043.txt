@@ -1,0 +1,8 @@
+﻿后端       : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr)
+通道状态   : Writable / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认）
+写入前     : PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False
+同值写入   : Success / 已写入并回读校验通过（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False）
+回读值     : PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False
+恢复原值   : Restored / 已恢复为启动时的原值
+
+RESULT: PASS（写入→回读→恢复全链路可用）

@@ -5,6 +5,7 @@ try
 {
     new DecisionTreeTests().RunAllTests();
     new MsrEncodingTests().RunAllTests();
+    new ThermalCalibrationTests().RunAllTests();
     return 0;
 }
 catch (Exception ex)

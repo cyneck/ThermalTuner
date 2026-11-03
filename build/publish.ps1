@@ -1,4 +1,4 @@
-# ThermalPilot 构建脚本（便携版 + 安装包）
+﻿# ThermalPilot 构建脚本（便携版 + 安装包）
 #
 # 用法：
 #   pwsh -File build/publish.ps1                 # 框架依赖单文件（约 12MB，需目标机装 .NET 8 桌面运行时）
@@ -9,13 +9,17 @@ param(
     [switch]$SelfContained,
     [switch]$Installer,
     [string]$Configuration = "Release",
-    [string]$Version = "0.3.0"
+    [string]$Version = "0.4.3"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root "artifacts/app-win-x64"
 $proj = Join-Path $root "src/ThermalPilot.App/ThermalPilot.App.csproj"
+# 本机只装了用户级 SDK（无系统级 dotnet SDK），优先用 DOTNET_ROOT 指向的 dotnet.exe
+$dotnet = if ($env:DOTNET_ROOT -and (Test-Path (Join-Path $env:DOTNET_ROOT "dotnet.exe"))) {
+    Join-Path $env:DOTNET_ROOT "dotnet.exe"
+} else { "dotnet" }
 
 Write-Host "==> 清理输出目录" -ForegroundColor Cyan
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -33,7 +37,7 @@ if ($SelfContained) { $publishArgs += @("--self-contained", "true") }
 else { $publishArgs += @("--self-contained", "false") }
 
 Write-Host "==> 发布（SelfContained=$SelfContained）" -ForegroundColor Cyan
-& dotnet publish @publishArgs
+& $dotnet publish @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败" }
 
 $exe = Join-Path $outDir "ThermalPilot.App.exe"

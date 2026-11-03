@@ -11,11 +11,10 @@ public class AutoCpuDecision
     public double TauS { get; set; }
     public int Epp { get; set; }
     public double Reff { get; set; }
-    public double PredictedC { get; set; }
-    public double PredictedSteadyC { get; set; }
+    /// <summary>标定热阻反解出的 PL1 安全上限（NaN = 未标定或未设基线）。决策输出会被钳到此值。</summary>
+    public double ThermalCapW { get; set; } = double.NaN;
     public bool RConfident { get; set; }
     public string RQuality { get; set; } = "Low";
-    public double PowerCapW { get; set; }
     public string Reason { get; set; } = string.Empty;
     public BindingLimit Limit { get; set; }
     public int Direction { get; set; } // -1 = 降能, 0 = 保持, +1 = 提速

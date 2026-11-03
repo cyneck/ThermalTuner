@@ -18,7 +18,6 @@ public record IdentifiedThermalState
     public bool IsSolved => !double.IsNaN(EstimatedRth);
     public bool IsConfident { get; init; }
     public string QualityDescription { get; init; } = "Uncalibrated";
-    public double PredictedSteadyTempC { get; init; }
     public double PowerCapWatts { get; init; }
     public ThermalDynamicRegime Regime { get; init; } = ThermalDynamicRegime.ColdOrIdle;
 }

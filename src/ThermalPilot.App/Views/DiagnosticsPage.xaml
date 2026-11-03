@@ -32,6 +32,7 @@
               <RowDefinition Height="26" />
               <RowDefinition Height="26" />
               <RowDefinition Height="26" />
+              <RowDefinition Height="26" />
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -60,9 +61,14 @@
             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="VmText" Style="{StaticResource Mono}"
                        VerticalAlignment="Center" Text="—" />
 
-            <TextBlock Grid.Row="6" Text="探测备注" Style="{StaticResource Label}" VerticalAlignment="Top"
+            <TextBlock Grid.Row="6" Text="功耗计量" Style="{StaticResource Label}" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding RaplText, Mode=OneWay}" Style="{StaticResource Mono}"
+                       VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding RaplText, Mode=OneWay}" />
+
+            <TextBlock Grid.Row="7" Text="探测备注" Style="{StaticResource Label}" VerticalAlignment="Top"
                        Margin="0,4,0,0" />
-            <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding NotesText}" Style="{StaticResource Label}"
+            <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding NotesText}" Style="{StaticResource Label}"
                        FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
           </Grid>
         </StackPanel>

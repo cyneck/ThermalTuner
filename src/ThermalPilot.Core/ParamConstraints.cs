@@ -1,3 +1,4 @@
+using ThermalPilot.Core.Msr;
 using ThermalPilot.Core.Taxonomy;
 
 namespace ThermalPilot.Core;
@@ -98,13 +99,25 @@ public static class ParamConstraints
             });
         }
 
-        if (!hw.IsTauLegal(tau))
+        // 硬件合法性（(1+y/4)·2^x 编码）与建议策略（≤128s 步长表）分开：
+        // 固件可能自带超长时间窗（OEM 常用最大窗让 PL2 长期生效），那是真值不是错误
+        if (RaplPowerLimit.EncodeTau(tau) < 0)
         {
             violations.Add(new ParamViolation
             {
                 Key = "Tau",
-                Message = $"时间常数 Tau ({tau}s) 不是合法的硬件 MSR 编码步长",
+                Message = $"时间常数 Tau ({tau}s) 不是合法的硬件 MSR 编码（应为 (1+y/4)·2^x 秒）",
                 Severity = ParamSeverity.Block,
+                Limit = BindingLimit.Unknown
+            });
+        }
+        else if (!hw.IsTauLegal(tau))
+        {
+            violations.Add(new ParamViolation
+            {
+                Key = "Tau",
+                Message = $"Tau ({tau}s) 是合法硬件编码，但超出建议步长表（1–128s）；超大时间窗会让 PL2 近似长期生效",
+                Severity = ParamSeverity.Warn,
                 Limit = BindingLimit.Unknown
             });
         }

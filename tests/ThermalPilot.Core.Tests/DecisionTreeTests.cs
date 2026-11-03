@@ -20,6 +20,9 @@ public class DecisionTreeTests
         Test_SafetyWatchdog_TriggersOnProchot();
         Test_SafetyWatchdog_TriggersOnNearTjMax();
         Test_LightLoad_PreservesCurrentState();
+        Test_LightLoad_AnchorsToFirmware_WhenDecisionWasRatchetUp();
+        Test_LightLoad_FallsBackToDecision_WhenFirmwareUnknown();
+        Test_Controller_NoRatchet_AfterLoadDrops();
         Test_CeilingExceeded_StepsDownPower();
         Test_ThermalPredictive_PreventsOvershoot();
         Test_BottleneckArbiter_StepsUpPower_WhenHeadroomAvailable();
@@ -81,6 +84,60 @@ public class DecisionTreeTests
         Assert(receipt.TriggeredRuleName == "LightLoadFilter", "Rule must be LightLoadFilter");
         Assert(receipt.Action.Direction == 0, "Direction must be 0 (hold)");
         Assert(receipt.Action.TargetPL1W == 35.0, "PL1 must remain unchanged");
+    }
+
+    public void Test_LightLoad_AnchorsToFirmware_WhenDecisionWasRatchetUp()
+    {
+        var profile = UserProfile.Balanced(_hw);
+        var snapshot = new ThermalSnapshot
+        {
+            CurrentTempC = 48.0,
+            CurrentPL1W = 65.0,      // 上一拍被高负载推到平台上限
+            FirmwarePL1W = 45.0,     // 固件实读值
+            CurrentFanPercent = 50.0,
+            LoadPercent = 7.0,
+            PackagePowerW = 10.0,
+            IsProchotActive = false
+        };
+
+        var receipt = _engine.EvaluateTick(snapshot, profile, _gains);
+
+        Assert(receipt.TriggeredRuleName == "LightLoadFilter", "Rule must be LightLoadFilter");
+        Assert(Math.Abs(receipt.Action.TargetPL1W - 45.0) < 1e-6,
+            $"轻载必须回落到固件实值 45W，不能锁在决策值 65W（实得 {receipt.Action.TargetPL1W:F1}W）");
+    }
+
+    public void Test_LightLoad_FallsBackToDecision_WhenFirmwareUnknown()
+    {
+        var profile = UserProfile.Balanced(_hw);
+        var snapshot = new ThermalSnapshot
+        {
+            CurrentTempC = 55.0,
+            CurrentPL1W = 35.0,
+            FirmwarePL1W = double.NaN,   // 无 MSR 通道
+            LoadPercent = 10.0,
+            PackagePowerW = 8.0
+        };
+
+        var receipt = _engine.EvaluateTick(snapshot, profile, _gains);
+        Assert(Math.Abs(receipt.Action.TargetPL1W - 35.0) < 1e-6,
+            "固件值不可读时应回退到决策值，保持向后兼容");
+    }
+
+    public void Test_Controller_NoRatchet_AfterLoadDrops()
+    {
+        var c = new AutoCpuController(HardwareLimits.DefaultIntelMobile);
+        // 高负载连续升档，把内部 _pl1 推高
+        for (int i = 0; i < 10; i++)
+            c.Update(tempC: 60, powerW: 40, ceilingC: 92, ambientC: 25, profile: "performance",
+                loadPct: 95, dTdt: 0.2, perf: new PerfSample { CoreClocksGhz = 3.0, MaxTurboGhz = 3.8 });
+
+        // 负载掉回轻载：必须回落，不能永久锁在高位
+        var dec = c.Update(tempC: 48, powerW: 10, ceilingC: 88, ambientC: 25, profile: "balanced",
+            loadPct: 7, dTdt: 0.0, firmwarePl1W: 45.0);
+
+        Assert(Math.Abs(dec.Pl1W - 45.0) < 1e-6,
+            $"轻载后应回落到固件 45W，实得 {dec.Pl1W:F1}W（棘轮未消除）");
     }
 
     public void Test_CeilingExceeded_StepsDownPower()

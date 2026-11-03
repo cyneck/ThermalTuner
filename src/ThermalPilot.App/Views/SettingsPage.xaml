@@ -57,6 +57,20 @@
           </StackPanel>
         </StackPanel>
       </Border>
+
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <StackPanel>
+          <TextBlock Text="优化参数的持久化" Style="{StaticResource H2}" />
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"
+                     Text="固件里的 PL1/PL2 是出厂默认，掉电即恢复、无法持久化。能持久化的只有软件侧的实测标定与手动微调值：每次开机由本软件写回寄存器；软件不运行时 CPU 按固件默认散热逻辑运转。" />
+          <CheckBox x:Name="ReplayBox" Content="开机自动重放已保存的微调参数（需管理员 + 写入授权）"
+                    Style="{StaticResource Switch}" Margin="0,12,0,0" Click="Toggle_Click" />
+          <TextBlock x:Name="SavedTuningText" Style="{StaticResource Mono}" FontSize="11" Margin="0,10,0,0"
+                     TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}" />
+          <Button Content="清除已保存的微调参数" Style="{StaticResource GhostButton}" Margin="0,10,0,0"
+                  HorizontalAlignment="Left" Click="ClearTuning_Click" />
+        </StackPanel>
+      </Border>
     </StackPanel>
 
     <StackPanel Grid.Column="1">
@@ -103,9 +117,9 @@
         <StackPanel>
           <TextBlock Text="关于" Style="{StaticResource H2}" />
           <TextBlock Style="{StaticResource Label}" Margin="0,8,0,0" TextWrapping="Wrap"
-                     Text="ThermalPilot · 决策树驱动的 CPU 热约束调优。M2 产品闭环与 M4 托盘/安装包已完成；MSR 写入代码就绪，但本机签名模块不支持写 0x610，实际降级为只读。" />
+                     Text="ThermalPilot · 决策树驱动的 CPU 热约束调优。实测标定与手动微调值保存在本机，开机后重放到寄存器；固件默认值不可持久化，退出恢复原值。" />
           <TextBlock Style="{StaticResource Mono}" FontSize="11" Margin="0,10,0,0"
-                     Foreground="{StaticResource TextTertiary}" Text="build 0.3.0 · net8.0-windows · WPF" />
+                     Foreground="{StaticResource TextTertiary}" Text="build 0.4.0 · net8.0-windows · WPF" />
         </StackPanel>
       </Border>
     </StackPanel>

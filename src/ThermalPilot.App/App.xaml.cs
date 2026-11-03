@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 
@@ -42,6 +43,81 @@ public partial class App : Application
             string report = GetArgValue(e.Args, "--out")
                             ?? Path.Combine(Path.GetTempPath(), "thermalpilot-msr-probe.txt");
             Shutdown(MsrProbe.Run(report));
+            return;
+        }
+
+        // 睿频倍率表自检：出厂档位 / 锁位 / 写入→回读→恢复（结束不改变硬件状态）
+        if (e.Args.Contains("--turbo-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-turbo-probe.txt");
+            Shutdown(MsrProbe.RunTurboProbe(report));
+            return;
+        }
+
+        // 只读自检：RAPL 能量计数器能否给出真实包功耗
+        if (e.Args.Contains("--rapl-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-rapl-probe.txt");
+            Shutdown(RaplProbe.Run(report));
+            return;
+        }
+
+        // 标定流程自检（真实满载 1–2 分钟，研发/QA 用）
+        if (e.Args.Contains("--calibrate-test", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-calibration.txt");
+            Shutdown(CalibrationProbe.Run(report));
+            return;
+        }
+
+        // 多档 PL1 阶梯压测智能标定：真实写入 0x610 → 逐档满载稳态 → 拟合 T(P) → 反解推荐 PL1
+        // 用法：--calibrate-sweep --out report.txt --csv samples.csv [--seconds 25] [--ceiling 85]
+        if (e.Args.Contains("--calibrate-sweep", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-sweep.txt");
+            string csv = GetArgValue(e.Args, "--csv")
+                         ?? Path.ChangeExtension(report, ".csv");
+            int seconds = int.TryParse(GetArgValue(e.Args, "--seconds"), out int secs)
+                          && secs is >= 10 and <= 300 ? secs : 25;
+            double ceiling = double.TryParse(GetArgValue(e.Args, "--ceiling"),
+                                 NumberStyles.Float, CultureInfo.InvariantCulture, out double c)
+                             ? c : double.NaN;
+            Shutdown(CalibrationSweepProbe.Run(new CalibrationSweepProbe.Options(report, csv, seconds, ceiling)));
+            return;
+        }
+
+        // A/B 压力测试：验证 0x610 写入链路 + 满载温度/功耗/频率曲线
+        // 用法：--stress-test --out report.txt --csv samples.csv [--seconds 45] [--low-pl1 25]
+        if (e.Args.Contains("--stress-test", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-stress.txt");
+            string csv = GetArgValue(e.Args, "--csv")
+                         ?? Path.ChangeExtension(report, ".csv");
+            int seconds = int.TryParse(GetArgValue(e.Args, "--seconds"), out int secs)
+                          && secs is >= 10 and <= 600 ? secs : 45;
+            double lowPl1 = double.TryParse(GetArgValue(e.Args, "--low-pl1"),
+                                NumberStyles.Float, CultureInfo.InvariantCulture, out double lp)
+                            && lp >= 5 && lp <= 200 ? lp : 25;
+            Shutdown(StressProbe.Run(new StressProbe.Options(report, csv, seconds, lowPl1)));
+            return;
+        }
+
+        // 睿频倍率 A/B 满载实测：出厂倍率表 vs 拉平到出厂单核上限，验证是否真的提升核频
+        // 用法：--turbo-stress --out report.txt --csv samples.csv [--seconds 30]
+        if (e.Args.Contains("--turbo-stress", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermalpilot-turbo-stress.txt");
+            string csv = GetArgValue(e.Args, "--csv")
+                         ?? Path.ChangeExtension(report, ".csv");
+            int seconds = int.TryParse(GetArgValue(e.Args, "--seconds"), out int secs)
+                          && secs is >= 10 and <= 300 ? secs : 30;
+            Shutdown(TurboStressProbe.Run(new TurboStressProbe.Options(report, csv, seconds)));
             return;
         }
 

@@ -42,7 +42,7 @@
               </TextBlock>
             </StackPanel>
           </Border>
-          <TextBlock Text="v0.2.0 骨架" Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" />
+          <TextBlock Text="v0.4.0" Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" />
         </StackPanel>
 
         <StackPanel Margin="0,4,0,0">
@@ -130,7 +130,7 @@
           </TextBlock>
           <TextBlock Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"
                      Foreground="{StaticResource TextTertiary}">
-            <Run Text="交互原型 → WPF 骨架 · 数据来自本机真实传感器" />
+            <Run Text="数据来自本机真实传感器 · MSR 写入需管理员与设置页授权" />
           </TextBlock>
         </Grid>
       </Border>

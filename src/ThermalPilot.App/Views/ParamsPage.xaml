@@ -33,6 +33,17 @@
           <TextBlock x:Name="MsrHint" Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0"
                      TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}"
                      Text="当前为演练模式：会完整走校验与确认，但不写硬件。" />
+          <TextBlock Text="{Binding FwDivergeText, Mode=OneWay}" Style="{StaticResource Label}" FontSize="11"
+                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}" />
+          <TextBlock Text="{Binding FwDefaultText, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="11"
+                     Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
+          <TextBlock Text="{Binding SavedTuningText, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="11"
+                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
+          <TextBlock Text="{Binding EppHintText, Mode=OneWay}" Style="{StaticResource Label}" FontSize="11"
+                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource Warn}" />
+          <TextBlock Text="「当前生效」为 MSR 实读值；固件出厂默认不可持久化（掉电即恢复），标定/微调值属于软件侧，写入成功后保存到本机并在每次开机重放。高于固件默认值只要落在硬件范围内即属正常优化。"
+                     Style="{StaticResource Label}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextTertiary}" />
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -56,7 +67,7 @@
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <TextBlock Text="参数" Style="{StaticResource Label}" FontSize="11" />
-          <TextBlock Grid.Column="1" Text="当前生效" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="当前生效（实读）" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="2" Text="待应用" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="3" Text="硬件范围" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="4" Text="为什么是这个范围" Style="{StaticResource Label}" FontSize="11" />
@@ -79,7 +90,7 @@
                        Foreground="{StaticResource TextTertiary}" />
           </StackPanel>
           <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
-            <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
+            <Run Text="{Binding FwPl1Text, Mode=OneWay}" /><Run Text=" W" />
           </TextBlock>
           <TextBox x:Name="Pl1Box" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
                    TextChanged="Value_Changed" />
@@ -106,7 +117,7 @@
                        Foreground="{StaticResource TextTertiary}" />
           </StackPanel>
           <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
-            <Run Text="{Binding Pl2Text, Mode=OneWay}" /><Run Text=" W" />
+            <Run Text="{Binding FwPl2Text, Mode=OneWay}" /><Run Text=" W" />
           </TextBlock>
           <TextBox x:Name="Pl2Box" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
                    TextChanged="Value_Changed" />
@@ -133,11 +144,11 @@
                        Foreground="{StaticResource TextTertiary}" />
           </StackPanel>
           <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
-            <Run Text="{Binding TauText, Mode=OneWay}" /><Run Text=" s" />
+            <Run Text="{Binding FwTauText, Mode=OneWay}" /><Run Text=" s" />
           </TextBlock>
           <TextBox x:Name="TauBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
                    TextChanged="Value_Changed" />
-          <TextBlock Grid.Column="3" Text="1/2/4/8/16/28/32/64 s"
+          <TextBlock Grid.Column="3" Text="(1+y/4)·2^x s · 建议步长 ≤128 s"
                      Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
           <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
                      TextWrapping="Wrap" Text="PL2 保持多久后回落到 PL1，只能取硬件编码步长。" />
@@ -157,7 +168,7 @@
             <TextBlock Text="MSR 0x774 [31:24]" Style="{StaticResource Mono}" FontSize="10"
                        Foreground="{StaticResource TextTertiary}" />
           </StackPanel>
-          <TextBlock Grid.Column="1" Text="{Binding EppText, Mode=OneWay}" Style="{StaticResource Mono}"
+          <TextBlock Grid.Column="1" Text="{Binding FwEppText, Mode=OneWay}" Style="{StaticResource Mono}"
                      FontSize="13" VerticalAlignment="Center" />
           <TextBox x:Name="EppBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
                    TextChanged="Value_Changed" />
@@ -165,6 +176,31 @@
                      FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
           <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
                      TextWrapping="Wrap" Text="芯片自主调频时的偏好权重，影响响应速度与瞬时功耗。" />
+        </Grid>
+
+        <!-- 睿频倍率上限 (MSR 0x1AD) -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="睿频倍率上限" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x1AD 八档" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding FwTurboText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="13" VerticalAlignment="Center"
+                     ToolTip="各活跃核心数档位的实读倍率（×100MHz），例如 38/36/35/34" />
+          <TextBox x:Name="TurboBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="{Binding TurboRangeText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Text="{Binding TurboHintText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
         </Grid>
       </StackPanel>
     </Border>

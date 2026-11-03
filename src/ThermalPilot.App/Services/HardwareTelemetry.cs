@@ -5,16 +5,18 @@ using LibreHardwareMonitor.Hardware;
 namespace ThermalPilot.App.Services;
 
 /// <summary>一次采样的遥测快照。</summary>
+/// <param name="PowerMeasured">功耗是否实测（RAPL 能量计数器或 LHM 传感器）；false 表示按负载粗估。</param>
 public readonly record struct TelemetrySample(
     double TempC,
     double LoadPercent,
     double PowerW,
     double MaxCoreGhz,
+    bool PowerMeasured,
     string Source);
 
 /// <summary>
 /// 只读遥测源。三级回退，任何一级失败都不中断程序：
-///   1. LibreHardwareMonitor（内核驱动，可读 CPU 封装温度 / 包功耗 / 核心频率，需管理员 + PawnIO）
+///   1. LibreHardwareMonitor 0.9.4（WinRing0 内核驱动，可读 CPU 封装温度 / 包功耗 / 核心频率，需管理员）
 ///   2. ACPI 热区 WMI（部分机型可用，粒度为整区）
 ///   3. GetSystemTimes 计算负载（始终可用）
 /// 研发注意：本类与 src/ThermalPilot.Monitor/TelemetrySource.cs 逻辑同源，
@@ -25,6 +27,8 @@ public sealed class HardwareTelemetry : IDisposable
     private readonly Computer? _computer;
     private readonly IHardware? _cpu;
     private bool _driverOk;
+
+    private RaplPowerMeter? _rapl;
 
     private bool _acpiOk = true;
     private bool _perfOk = true;
@@ -56,6 +60,16 @@ public sealed class HardwareTelemetry : IDisposable
 
     public bool DriverAvailable => _driverOk;
 
+    /// <summary>
+    /// 挂载 RAPL 功耗计量。MSR 通道由 SessionState 统一持有，
+    /// 遥测层只借用，不负责打开/关闭（避免重复句柄）。
+    /// </summary>
+    public void AttachRapl(RaplPowerMeter? meter) => _rapl = meter;
+
+    /// <summary>RAPL 是否可用（诊断页展示）。</summary>
+    public bool RaplAvailable => _rapl?.Available == true;
+    public string RaplDetail => _rapl?.Detail ?? "未接入";
+
     /// <summary>传感器总数（诊断页用）。</summary>
     public int SensorCount => _cpu?.Sensors.Length ?? 0;
 
@@ -80,6 +94,9 @@ public sealed class HardwareTelemetry : IDisposable
 
     public TelemetrySample Read()
     {
+        // RAPL 每拍只读一次：能量计数器是累加量，多读会打乱 Δt
+        double raplW = _rapl is not null && _rapl.TrySample(out double rw) ? rw : double.NaN;
+
         if (_driverOk && _cpu is not null)
         {
             try
@@ -88,15 +105,22 @@ public sealed class HardwareTelemetry : IDisposable
                 foreach (var sub in _cpu.SubHardware) sub.Update();
 
                 double temp = PickTemperature();
-                double power = PickSensor(SensorType.Power, "Package");
+                double lhmPower = PickSensor(SensorType.Power, "Package");
                 double load = PickSensor(SensorType.Load, "CPU Total");
                 double clock = PickMaxClock();
 
                 if (!double.IsNaN(temp))
                 {
                     if (double.IsNaN(load)) load = ReadLoadFromSystemTimes();
-                    if (double.IsNaN(power)) power = EstimatePower(load);
-                    return new TelemetrySample(temp, load, power, clock, "LHM");
+
+                    // 优先级：LHM 传感器 > RAPL 实测 > 按负载估算
+                    if (!double.IsNaN(lhmPower))
+                        return new TelemetrySample(temp, load, lhmPower, clock, true, "LHM");
+
+                    if (!double.IsNaN(raplW))
+                        return new TelemetrySample(temp, load, raplW, clock, true, "RAPL");
+
+                    return new TelemetrySample(temp, load, EstimatePower(load), clock, false, "LHM/估算");
                 }
             }
             catch
@@ -105,10 +129,15 @@ public sealed class HardwareTelemetry : IDisposable
             }
         }
 
-        // 回退：ACPI 温度 + 系统负载 + 粗估功耗
+        // 回退：ACPI 温度 + 系统负载；功耗优先 RAPL，其次估算
         double t = ReadWmiTemperature();
         double l = ReadLoadFromSystemTimes();
-        return new TelemetrySample(t, l, EstimatePower(l), 0, double.IsNaN(t) ? "SystemTimesOnly" : "WMI");
+
+        if (!double.IsNaN(raplW))
+            return new TelemetrySample(t, l, raplW, 0, true, "RAPL");
+
+        return new TelemetrySample(t, l, EstimatePower(l), 0, false,
+            double.IsNaN(t) ? "SystemTimesOnly" : "WMI");
     }
 
     // ---------- 传感器挑选 ----------
@@ -147,7 +176,9 @@ public sealed class HardwareTelemetry : IDisposable
             if (s.Value is float v && v > 0)
                 best = double.IsNaN(best) ? v : Math.Max(best, v);
         }
-        return best;
+        // LHM 的 Clock 传感器单位是 MHz；MaxCoreGhz 与界面都按 GHz 消费，
+        // 不换算会出现「3510.00 GHz」，且错值会进 ThermalSnapshot.CoreClockGhz。
+        return double.IsNaN(best) ? best : best / 1000.0;
     }
 
     // ---------- 回退路径 ----------

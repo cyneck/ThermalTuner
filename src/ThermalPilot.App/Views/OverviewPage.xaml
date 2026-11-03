@@ -180,7 +180,7 @@
 
           <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="当前为只读监控：决策值仅展示，未写入 MSR。写入通道属 M3 里程碑（含备份 / 回读 / 看门狗）。" />
+                       Text="{Binding MonitorHintText, Mode=OneWay}" />
           </Border>
         </StackPanel>
       </Border>

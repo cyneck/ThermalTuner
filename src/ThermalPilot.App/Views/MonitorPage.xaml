@@ -77,7 +77,7 @@
           <TextBlock Grid.Column="1" Text="温度" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="2" Text="负载" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="3" Text="包功耗" Style="{StaticResource Label}" FontSize="11" />
-          <TextBlock Grid.Column="4" Text="PL1" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="4" Text="PL1 实效" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="5" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
         </Grid>
 

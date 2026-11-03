@@ -1,0 +1,13 @@
+﻿后端: LHM 0.9.4 / WinRing0 (Ring0.WriteMsr)
+LHM: LibreHardwareMonitorLib, Version=0.9.4.0, Culture=neutral, PublicKeyToken=null
+
+== Ring0 MSR 接口 ==
+  Void Open()
+  Void Close()
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx)
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx, GroupAffinity affinity)
+  Boolean WriteMsr(UInt32 index, UInt32 eax, UInt32 edx)
+
+通道: Writable / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认）
+写能力: 可用（写入由 MsrGuard 回读校验兜底）
+0x610: PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False

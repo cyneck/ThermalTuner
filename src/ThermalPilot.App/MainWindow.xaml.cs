@@ -128,12 +128,13 @@ public partial class MainWindow : Window
         }
 
         // 退出时恢复 MSR 原值（PRD G-05）
+        // 注意：恢复失败只记告警，绝不弹模态框——否则托盘退出会被对话框挂住，进程无法结束
         if (_session.Settings.RestoreOnExit && _session.HasMsrBackup && _session.MsrWritable)
         {
             var r = _session.RestoreOriginal();
             if (!r.Ok)
-                MessageBox.Show("退出前恢复原值失败：" + r.Message + "\n请手动在「高级参数」页重试。",
-                    "ThermalPilot", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _session.AddAlert("warn", "退出前恢复原值失败",
+                    r.Message + "；请重启后在「高级参数」页点「恢复原值」，或重启机器回到固件默认值。");
         }
 
         _tray?.Dispose();

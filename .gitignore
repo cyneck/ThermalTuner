@@ -2,6 +2,8 @@
 bin/
 obj/
 artifacts/
+# 发布包与自包含可执行文件（体积大，仅本地交付，不入库）
+dist/
 
 # 用户/IDE
 .vs/

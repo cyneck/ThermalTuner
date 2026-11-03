@@ -1,0 +1,42 @@
+=== LHM 0.9.4 WinRing0 MSR 写入实证 ===
+时间: 2026-11-03 20:14:25
+OS: Microsoft Windows NT 10.0.19045.0  64bit=True
+管理员: True
+LHM 程序集: LibreHardwareMonitorLib, Version=0.9.4.0, Culture=neutral, PublicKeyToken=null
+位置: D:\code\ThermalTuner\artifacts\ring0-probe\bin\Release\net8.0-windows\LibreHardwareMonitorLib.dll
+
+-- Ring0 静态方法 --
+  Void Open()
+  Void Close()
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx)
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx, GroupAffinity affinity)
+  Boolean WriteMsr(UInt32 index, UInt32 eax, UInt32 edx)
+  UInt32 GetPciAddress(Byte bus, Byte device, Byte function)
+  Boolean ReadPciConfig(UInt32 pciAddress, UInt32 regAddress, out UInt32& value)
+  IsOpen 属性: 有
+  解析结果: ReadMsr=True  WriteMsr=True  Open=True
+
+-- 驱动加载 --
+  Computer.Open() 已调用
+  Ring0.IsOpen (Computer.Open 之后): False
+  Ring0.Open() 返回: void
+  Ring0.IsOpen (Open 之后): True
+
+-- 读 MSR --
+  0x610 = 0x004281C200DD8168
+  0x1A0 = 0x0000000000850089
+  0x774 = 0x0000019E0000261C
+  0x1AD = 0x0000000022232426
+  解码: PL1=45.0W  PL2=56.2W  Tau字段=110  lock=False
+
+-- 写入实测（每一步都读回校验）--
+  [1] 同值写回 0x610: 写入调用=成功  回读=0x004281C200DD8168  一致=True
+  [2] 写 PL1=40.0W: 目标=0x004281C200DD8140  写入调用=成功  回读=0x004281C200DD8140 (PL1=40.0W)  生效=True
+  [3] 恢复原值: 写入调用=成功  回读=0x004281C200DD8168  一致=True
+
+=== 结论 ===
+本机 LHM 0.9.4 / WinRing0 通道：MSR 0x610 可读、可写、回读校验通过、可精确恢复。
+=> 上一版『本机写入链路不通』的结论错误；真实原因是当前项目升级到 LHM 0.9.6 后
+   驱动后端换成 PawnIO，且内嵌 IntelMSR 模块只提供 ioctl_read_msr（只读）。
+   芯片本身与老版本一样可写 PL1/PL2/Tau/EPP/睿频倍率，甚至 0x150 电压偏移。
+  0x774 EPP: 可读   0x1AD 睿频倍率: 可读

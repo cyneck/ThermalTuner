@@ -29,6 +29,10 @@ internal static class SmokeTest
             sb.AppendLine($"温度/功耗    : {session.TjMaxText} · {session.PlRangeText}");
             sb.AppendLine($"驱动/权限    : {session.DriverText} / {session.ElevationText}");
             sb.AppendLine($"传感器       : {session.SensorCount}");
+            sb.AppendLine($"功耗计量     : {session.RaplText}");
+            sb.AppendLine($"标定持久化   : {session.CalibrationSummaryText}");
+            sb.AppendLine($"微调持久化   : {session.SavedTuningText}");
+            sb.AppendLine($"开机重放     : {session.Settings.ReplayOnStartup}（允许实写 {session.Settings.AllowRealWrite}）");
             sb.AppendLine();
 
             sb.AppendLine("== 主循环（3 拍）==");
@@ -36,9 +40,24 @@ internal static class SmokeTest
             {
                 session.SampleOnce();
                 sb.AppendLine($"  拍{i}: T={session.TempText}°C load={session.LoadText}% P={session.PowerText}W " +
+                              $"来源={session.PowerSource} Rth={session.RthText}({session.RthSourceText}) " +
                               $"PL1={session.Pl1Text}W 规则={session.LastRule}");
                 System.Threading.Thread.Sleep(350);
             }
+
+            // 采样后再判定：CanCalibrate 依赖首个有效温度样本
+            sb.AppendLine($"可否标定     : {session.CanCalibrate}（{session.CalibrationBlockedReason}）");
+            sb.AppendLine();
+
+            sb.AppendLine("== 热模型 / 固件锚点 ==");
+            sb.AppendLine($"最高核频     : {session.ClockText} GHz");
+            sb.AppendLine($"固件默认     : {session.FwDefaultText}");
+            sb.AppendLine($"当前生效     : PL1 {session.FwPl1Text}W · PL2 {session.FwPl2Text}W · Tau {session.FwTauText} · EPP {session.FwEppText}");
+            sb.AppendLine($"EPP 可编辑   : {session.EppEditable}");
+            sb.AppendLine($"预测稳态     : {session.PredictedText}°C（{session.PredictedBasisText}）");
+            sb.AppendLine($"预测基线     : {session.PredictedBaselineText}");
+            sb.AppendLine($"标定前馈     : {session.ThermalCapText}");
+            sb.AppendLine($"分歧说明     : {session.FwDivergeText}");
             sb.AppendLine();
 
             sb.AppendLine("== 页面 ==");

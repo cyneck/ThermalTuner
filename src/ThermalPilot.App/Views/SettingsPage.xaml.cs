@@ -28,8 +28,10 @@ public partial class SettingsPage : UserControl
         RestoreBox.IsChecked = s.Settings.RestoreOnExit;
         TrayBox.IsChecked = s.Settings.CloseToTray;
         RealWriteBox.IsChecked = s.Settings.AllowRealWrite;
+        ReplayBox.IsChecked = s.Settings.ReplayOnStartup;
         StartupBox.IsChecked = StartupRegistration.IsEnabled();
         MsrStatusLine.Text = $"MSR 通道：{s.MsrStatusText} —— {s.MsrDetail}";
+        RefreshSavedTuning();
 
         foreach (ComboBoxItem item in IntervalBox.Items)
         {
@@ -58,7 +60,25 @@ public partial class SettingsPage : UserControl
         s.Settings.AutoTakeover = TakeoverBox.IsChecked == true;
         s.Settings.RestoreOnExit = RestoreBox.IsChecked == true;
         s.Settings.CloseToTray = TrayBox.IsChecked == true;
-        SettingsStore.Save(s.Settings);
+        s.SetReplayOnStartup(ReplayBox.IsChecked == true);
+        RefreshSavedTuning();
+    }
+
+    private void RefreshSavedTuning()
+    {
+        if (Session is { } s) SavedTuningText.Text = s.SavedTuningText;
+    }
+
+    private void ClearTuning_Click(object sender, RoutedEventArgs e)
+    {
+        if (Session is not { } s) return;
+        if (!ConfirmDialog.Ask(Window.GetWindow(this), "清除已保存的微调参数",
+                "清除后下次开机不再重放，CPU 将保持固件默认值。已写入寄存器的当前值不会立即撤销。",
+                new[] { "只清除本机保存的记录，不改动当前寄存器", "如需立即回退，请到高级参数页点「恢复原值」" },
+                "清除"))
+            return;
+        s.ClearManualTuning();
+        RefreshSavedTuning();
     }
 
     private void Startup_Click(object sender, RoutedEventArgs e)
@@ -87,7 +107,7 @@ public partial class SettingsPage : UserControl
 
         if (!s.MsrWritable)
         {
-            MessageBox.Show($"当前通道不可写：{s.MsrDetail}\n\n请以管理员身份运行，并确认 PawnIO 已安装。",
+            MessageBox.Show($"当前通道不可写：{s.MsrDetail}\n\n请以管理员身份运行，并确认 WinRing0 驱动未被 HVCI 内存完整性或安全软件拦截。",
                 "ThermalPilot", MessageBoxButton.OK, MessageBoxImage.Warning);
             RealWriteBox.IsChecked = false;
             return;

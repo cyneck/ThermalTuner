@@ -16,10 +16,16 @@ public class AutoCpuController
     private double _pl1;
     private double _currentFan = 50.0;
     private DateTime _last = DateTime.MinValue;
+    // 稳态标定基线：标定时/会话轻载的同源 (T, P) 样本，供每拍前馈钳制
+    private double _idleTempC = double.NaN;
+    private double _idlePowerW = double.NaN;
+    private double _thermalCapW = double.NaN;
 
     public ThermalResistance Resistance => _r;
     public bool HasR => _r.Solved;
     public ThermalDecisionEngine Engine => _engine;
+    /// <summary>标定反解的 PL1 安全上限；NaN = 尚未标定或基线无效。</summary>
+    public double ThermalCapW => _thermalCapW;
 
     /// <summary>本控制器绑定的物理硬件约束（只读，由探测器/注入决定）。</summary>
     public HardwareLimits Limits => _limits;
@@ -53,7 +59,8 @@ public class AutoCpuController
         double? maxW = null,
         PerfSample? perf = null,
         double loadPct = double.NaN,
-        double dTdt = double.NaN)
+        double dTdt = double.NaN,
+        double firmwarePl1W = double.NaN)
     {
         // 1. 构建强类型 HardwareLimits 与 UserProfile（minW/maxW 未显式给出时采用探测到的平台约束）
         var hwLimits = _limits with
@@ -77,8 +84,7 @@ public class AutoCpuController
         {
             EstimatedRth = _r.Solved ? _r.Value : double.NaN,
             IsConfident = _r.Solved,
-            QualityDescription = _r.Solved ? "Solved" : _r.LastReject,
-            PredictedSteadyTempC = _r.Solved ? tempC + ((_pl1 - powerW) * _r.Value) : tempC
+            QualityDescription = _r.Solved ? "Solved" : _r.LastReject
         };
 
         // 3. 构建当前拍只读物理快照
@@ -88,6 +94,7 @@ public class AutoCpuController
             AmbientTempC = ambientC,
             PackagePowerW = powerW,
             CurrentPL1W = _pl1,
+            FirmwarePL1W = firmwarePl1W,
             CurrentFanPercent = _currentFan,
             LoadPercent = double.IsNaN(loadPct) ? 50.0 : loadPct,
             DtDt = double.IsNaN(dTdt) ? 0.0 : dTdt,
@@ -101,8 +108,23 @@ public class AutoCpuController
         var receipt = _engine.EvaluateTick(snapshot, userProfile, _gains);
         LatestReceipt = receipt;
 
-        // 5. 应用状态更新（输出钳制在硬件物理边界内，防止任何节点越界下发）
-        _pl1 = Math.Clamp(receipt.Action.TargetPL1W, hwLimits.MinPL1, hwLimits.MaxPL1);
+        // 5. 应用状态更新（输出钳制在硬件边界内）
+        //    标定前馈：用稳态模型反解「不越过天花板」的最大 PL1，钳住任何节点的输出。
+        //    只在有实测标定值时启用；在线拟合未收敛时不干预，避免拿不可信模型误钳。
+        double upper = hwLimits.MaxPL1;
+        _thermalCapW = double.NaN;
+        if (_r.Calibrated)
+        {
+            double cap = ThermalCalibration.MaxPowerForCeiling(
+                _r.Value, _idleTempC, _idlePowerW, userProfile.TargetTemperatureCeiling);
+            if (!double.IsNaN(cap))
+            {
+                _thermalCapW = Math.Clamp(cap, hwLimits.MinPL1, hwLimits.MaxPL1);
+                upper = _thermalCapW;
+            }
+        }
+
+        _pl1 = Math.Clamp(receipt.Action.TargetPL1W, hwLimits.MinPL1, upper);
         _currentFan = receipt.Action.TargetFanPercent;
         _last = DateTime.UtcNow;
 
@@ -115,13 +137,21 @@ public class AutoCpuController
             TauS = receipt.Action.TargetTauS,
             Epp = receipt.Action.TargetEpp,
             Reff = _r.Solved ? _r.Value : 0.8,
+            ThermalCapW = _thermalCapW,
             RConfident = _r.Solved,
             RQuality = identifiedState.QualityDescription,
-            PredictedSteadyC = identifiedState.PredictedSteadyTempC,
             Reason = receipt.CausalReason,
             Limit = receipt.ActiveLimit,
             Direction = receipt.Action.Direction
         };
+    }
+
+    /// <summary>设置稳态基线（标定点或会话内轻载稳态点），供每拍前馈钳制与预测共用。</summary>
+    public void SetThermalBaseline(double idleTempC, double idlePowerW)
+    {
+        if (double.IsNaN(idleTempC) || double.IsNaN(idlePowerW) || idlePowerW < 0) return;
+        _idleTempC = idleTempC;
+        _idlePowerW = idlePowerW;
     }
 
     public void Reset()
@@ -132,6 +162,12 @@ public class AutoCpuController
     }
 
     public void ResetResistance() => _r.Reset();
+
+    /// <summary>写入两段式稳态标定的热阻，作为在线拟合的先验基准。</summary>
+    public void ApplyCalibratedRth(double rthKW) => _r.ApplyCalibration(rthKW);
+
+    /// <summary>当前热阻是否来自标定（决策凭证与 UI 需要区分来源）。</summary>
+    public bool HasCalibratedR => _r.Calibrated;
 
     public static double TargetCForProfile(string profile) => UserProfile.FromName(profile).TargetTemperatureCeiling;
     public static double FanMaxForProfile(string profile) => UserProfile.FromName(profile).FanMaxPercent;

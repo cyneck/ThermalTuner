@@ -1,3 +1,4 @@
+using ThermalPilot.Core;
 using ThermalPilot.Core.Taxonomy;
 
 namespace ThermalPilot.Core.DecisionTree.Nodes;
@@ -28,7 +29,9 @@ public class ThermalPredictiveNode : IDecisionNode
             // ΔP 用「PL1 设定值之差」而非「功率传感器读数之差」：
             // 包功耗读数存在 1~3 秒滞后，用它会把滞后误当成热阻，产生 120°C 这类假预警。
             double deltaPl1 = potentialNextPL1 - snapshot.CurrentPL1W;
-            double predictedSteadyTemp = snapshot.CurrentTempC + deltaPl1 * rth;
+            // 与标定报告、界面预测卡片共用唯一入口，禁止各自用瞬态温度另算一套
+            double predictedSteadyTemp = ThermalCalibration.PredictSteady(
+                rth, snapshot.CurrentTempC, snapshot.CurrentPL1W, potentialNextPL1);
 
 
             if (predictedSteadyTemp > profile.TargetTemperatureCeiling)

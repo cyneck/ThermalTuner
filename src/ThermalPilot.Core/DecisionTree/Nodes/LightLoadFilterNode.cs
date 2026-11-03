@@ -20,10 +20,17 @@ public class LightLoadFilterNode : IDecisionNode
 
         if (snapshot.LoadPercent < gains.MinLoadPercentage || snapshot.PackagePowerW < gains.MinPackagePowerWatts)
         {
+            // 「保持当前设置」必须锚定固件实读值：snapshot.CurrentPL1W 是控制器上一拍的
+            // 决策目标，若曾在高负载被推到平台上限，轻载时保持它会形成只升不降的棘轮，
+            // 授权写入后甚至会在 7% 负载下把 PL1 从固件默认 45W 抬到 65W。
+            // 读不到固件值时才回退到决策值（兼容测试与无驱动环境）。
+            bool hasFw = !double.IsNaN(snapshot.FirmwarePL1W) && snapshot.FirmwarePL1W > 0;
+            double holdPl1 = hasFw ? snapshot.FirmwarePL1W : snapshot.CurrentPL1W;
+
             var action = new ControllerAction
             {
-                TargetPL1W = snapshot.CurrentPL1W,
-                TargetPL2W = snapshot.CurrentPL1W * profile.Pl2Ratio,
+                TargetPL1W = holdPl1,
+                TargetPL2W = holdPl1 * profile.Pl2Ratio,
                 TargetTauS = profile.TauSeconds,
                 TargetEpp = profile.Epp,
                 TargetFanPercent = Math.Min(snapshot.CurrentFanPercent, profile.FanMaxPercent),

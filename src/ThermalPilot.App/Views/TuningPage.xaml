@@ -123,8 +123,8 @@
       <Border Style="{StaticResource Card}">
         <StackPanel>
           <TextBlock Text="在线热模型" Style="{StaticResource H2}" />
-          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,12"
-                     Text="用真实温度与功耗拟合热阻，预测「再升一档会不会超标」。" />
+          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,12" TextWrapping="Wrap"
+                     Text="用真实温度与功耗拟合热阻，预测稳态温度；标定值还会按天花板钳制决策 PL1 上限，参与每拍决策。" />
 
           <Grid>
             <Grid.ColumnDefinitions>
@@ -138,6 +138,8 @@
                 <TextBlock Text="{Binding RthText, Mode=OneWay}" Style="{StaticResource Metric}" FontSize="22" />
                 <TextBlock Text=" K/W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,3" />
               </StackPanel>
+              <TextBlock Text="{Binding RthSourceText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" Margin="0,2,0,0" />
             </StackPanel>
 
             <StackPanel Grid.Column="1">
@@ -146,12 +148,24 @@
                 <TextBlock Text="{Binding PredictedText, Mode=OneWay}" Style="{StaticResource Metric}" FontSize="22" />
                 <TextBlock Text=" °C" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,3" />
               </StackPanel>
+              <TextBlock Text="{Binding PredictedBasisText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" Margin="0,2,0,0" />
+              <TextBlock Text="{Binding PredictedBaselineText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="10" Margin="0,1,0,0" Foreground="{StaticResource TextTertiary}" />
             </StackPanel>
           </Grid>
 
           <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
-            <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="仅在拟合可信（R² ≥ 0.5 且功率跨度 ≥ 12W）时输出；不满足时显示 --，宁可不预测也不用错模型。" />
+            <StackPanel>
+              <TextBlock Text="{Binding ThermalCapText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" TextWrapping="Wrap" />
+              <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextTertiary}"
+                         Text="预测式：基线温度 +（目标功耗 − 基线功耗）× 热阻；基线取最近一次轻载稳态样本，可与卡片数值手工复算。" />
+              <TextBlock Text="{Binding CalibrationSummaryText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
           </Border>
         </StackPanel>
       </Border>
@@ -167,14 +181,20 @@
                        BorderThickness="0" Margin="0,0,0,12" />
 
           <StackPanel Orientation="Horizontal">
-            <Button x:Name="CalibrateButton" Content="开始 20 秒标定" Style="{StaticResource PrimaryButton}"
+            <Button x:Name="CalibrateButton" Content="开始两段式标定" Style="{StaticResource PrimaryButton}"
+                    IsEnabled="{Binding CanCalibrate, Mode=OneWay}"
+                    ToolTip="{Binding CalibrationBlockedReason, Mode=OneWay}"
                     Click="Calibrate_Click" />
             <Button Content="取消" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
                     Click="CancelCalibration_Click" />
+            <Button Content="以管理员重启" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                    Visibility="{Binding ElevationHintVisibility, Mode=OneWay}"
+                    ToolTip="读取真实功耗与 MSR 需要管理员权限"
+                    Click="RestartElevated_Click" />
           </StackPanel>
 
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
-                     Text="标定会拉起全部核心负载 20 秒，风扇会变响；标定期间请勿关闭程序。" />
+                     Text="12 秒空载基线 → 满载升温至温度平台 → 10 秒稳态采样，全程 1–3 分钟（视散热条件），风扇会变响；期间请勿操作系统。按钮置灰时悬停可看缺少哪项读数。" />
         </StackPanel>
       </Border>
 

@@ -26,7 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <!-- 0.9.4 自带 WinRing0 内核驱动，提供 Ring0.WriteMsr（可读写 MSR）。
+         0.9.6 起 LHM 把后端换为 PawnIO，且随包 IntelMSR 模块只有 ioctl_read_msr（只读），
+         会导致 0x610 写入能力丢失。本项目需要真实下发 PL1/PL2/EPP，故固定 0.9.4。 -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>
 
