@@ -1,0 +1,15 @@
+==== ThermalPilot Core 功能测试 ====
+All MSR encoding tests passed successfully!
+PASS  MsrEncoding             19 ms
+PASS  TurboRatioLimit         12 ms
+All ThermalCalibration unit tests passed successfully!
+PASS  ThermalCalibration      23 ms
+PASS  ThermalResistance        4 ms
+All DecisionTree unit tests passed successfully!
+PASS  DecisionTree             5 ms
+PASS  PlatformProfile         13 ms
+
+套件 : 6/6 通过（失败 0）
+断言 : 通过 173 / 失败 0（新增用例）
+耗时 : 91 ms
+RESULT: PASS

@@ -146,8 +146,9 @@ internal static class MsrProbe
     }
 
     /// <summary>
-    /// 睿频倍率表自检：读出厂档位与锁位 → 把各档拉平到出厂单核上限 → 回读校验 → 恢复。
-    /// 结束不改变硬件状态；用法：--turbo-probe --out turbo.txt（需管理员）。
+    /// 睿频倍率表自检：读当前/出厂档位与锁位 → 写入探针档与出厂单核上限 → 回读校验 → 恢复出厂备份。
+    /// 当前值若来自开机重放，会先写探针档确保真实走一次写入；结束时寄存器为固件默认倍率表。
+    /// 用法：--turbo-probe --out turbo.txt（需管理员）。
     /// </summary>
     public static int RunTurboProbe(string outPath)
     {
@@ -190,17 +191,42 @@ internal static class MsrProbe
             Flush(outPath, sb);
             return 4;
         }
-        var t = TurboRatioLimit.Decode(raw);
-        sb.AppendLine($"  出厂 0x1AD : {TurboRatioLimit.Describe(t)}");
-        sb.AppendLine($"  允许范围   : [{TurboRatioLimit.MinRatio}, {t.MaxTier}] ×100MHz（不做超出出厂规格的超频）");
-        sb.AppendLine();
-
+        var current = TurboRatioLimit.Decode(raw);
         using var guard = new MsrGuard(channel, SettingsStore.DataDirectory);
+
+        // 当前值可能已被开机重放的手动微调改写（例如保存过 36x），
+        // 真正出厂值以启动备份为准；没有备份时才退回当前值。
+        ulong factoryRaw = guard.TurboSupported && guard.StartupTurboBackup is not null
+            ? guard.StartupTurboBackup.Raw
+            : raw;
+        var factory = TurboRatioLimit.Decode(factoryRaw);
+
+        sb.AppendLine($"  当前 0x1AD : {TurboRatioLimit.Describe(current)}" +
+                      (raw == factoryRaw ? "" : "（含开机重放，非出厂值）"));
+        sb.AppendLine($"  出厂默认   : {TurboRatioLimit.Describe(factory)}");
+        sb.AppendLine($"  允许范围   : [{TurboRatioLimit.MinRatio}, {factory.MaxTier}] ×100MHz（不做超出出厂规格的超频）");
+        sb.AppendLine();
         sb.AppendLine($"  启动备份   : {(guard.TurboSupported ? TurboRatioLimit.Describe(guard.StartupTurboBackup!) : "无")}");
         sb.AppendLine();
         sb.AppendLine("== 2. 写入 → 回读 → 恢复 ==");
-        var w = guard.ApplyTurbo(t.MaxTier);
-        sb.AppendLine($"  写入 {t.MaxTier}x : {w.Outcome} / {w.Message}");
+
+        // 若当前已等于出厂上限，先写一个探针档位，确保真的走一次「写入→回读」，
+        // 否则会出现「无需写入」却仍判 PASS 的假阳性。
+        int targetRatio = factory.MaxTier;
+        bool probeOk = true;
+        if (TurboRatioLimit.AllTiersEqual(raw, targetRatio))
+        {
+            int probeRatio = Math.Max(TurboRatioLimit.MinRatio, targetRatio - 2);
+            var wp = guard.ApplyTurbo(probeRatio);
+            var probeState = guard.ReadTurbo();
+            probeOk = wp.Ok && probeState is not null &&
+                      TurboRatioLimit.AllTiersEqual(probeState.Raw, probeRatio);
+            sb.AppendLine($"  探针写入 {probeRatio}x : {wp.Outcome} / {wp.Message}");
+            sb.AppendLine($"  探针后实读   : {(probeState is null ? "--" : TurboRatioLimit.Describe(probeState))}");
+        }
+
+        var w = guard.ApplyTurbo(targetRatio);
+        sb.AppendLine($"  写入 {targetRatio}x : {w.Outcome} / {w.Message}");
         var after = guard.ReadTurbo();
         sb.AppendLine($"  写入后实读 : {(after is null ? "--" : TurboRatioLimit.Describe(after))}");
         var r = guard.RestoreTurbo();
@@ -208,7 +234,9 @@ internal static class MsrProbe
         var final = guard.ReadTurbo();
         sb.AppendLine($"  最终实读   : {(final is null ? "--" : TurboRatioLimit.Describe(final))}");
 
-        bool ok = w.Ok && r.Ok && final is not null && final.Raw == raw;
+        bool wroteTarget = w.Ok && after is not null &&
+                           TurboRatioLimit.AllTiersEqual(after.Raw, targetRatio);
+        bool ok = probeOk && wroteTarget && r.Ok && final is not null && final.Raw == factoryRaw;
         sb.AppendLine();
         sb.AppendLine(ok
             ? "RESULT: PASS（0x1AD 可写、可回读校验、可精确恢复出厂档位）"

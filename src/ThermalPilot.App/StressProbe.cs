@@ -99,7 +99,8 @@ internal static class StressProbe
             sb.AppendLine("· 写 MSR 0x610（PKG_POWER_LIMIT）：PL1 长时功耗墙 / PL2 短时爆发墙 / Tau 平均窗口。");
             sb.AppendLine("· 写 MSR 0x774 [31:24]：HWP EPP 能效偏好（本机 0x774 可读，写后回读校验）。");
             sb.AppendLine("· 只读 MSR 0x606 / 0x611（或 AMD 0xC0010299 / 0xC001029B）：RAPL 能量单位与能量计数器，用于算真实包功耗。");
-            sb.AppendLine("· MSR 0x1AD 睿频倍率 / 0x150 FIVR 电压偏移：本机可读可写（老版本实现过），当前版本暂未接入，不写。");
+            sb.AppendLine("· MSR 0x1AD 睿频倍率：本机可读可写，已接入高级参数页（范围 [8, 出厂单核上限]，不做超频）。");
+            sb.AppendLine("· MSR 0x150 FIVR 电压偏移：老版本实现过，当前版本尚未接入，不写。");
             sb.AppendLine("· 风扇 / EC / PWM：代码中不存在任何写入。决策树里的 TargetFanPercent 只是动作字段，未落到硬件；");
             sb.AppendLine("  风扇转速由固件/EC 按温度曲线自行调节，软件只能通过降低发热间接影响它。");
             sb.AppendLine("· 电源计划 / 最大频率：软件不碰（powercfg 对照在本机无效，已从压测移除）。");
@@ -345,7 +346,7 @@ internal static class StressProbe
         if (writable)
         {
             sb.AppendLine($"1) 通道 {MsrChannel.BackendName} 可用：软件真实读写 MSR 0x610（PL1/PL2/Tau）与 0x774（EPP）；");
-            sb.AppendLine("   风扇 / EC / PWM / 电源计划一律不碰；0x1AD 睿频倍率、0x150 电压偏移本机可写，当前版本暂未接入。");
+            sb.AppendLine("   风扇 / EC / PWM / 电源计划一律不碰；0x1AD 睿频倍率已接入（本机可写），0x150 电压偏移尚未接入。");
             sb.AppendLine("2) 本次实测：同值写回 → 回读 → 恢复全链路 PASS；压测中 0x610 实读随阶段从固件默认变为降墙/放宽值，");
             sb.AppendLine("   收尾已恢复固件默认值。『软件只算不写』的判断已被实测推翻。");
             sb.AppendLine("3) 参数生效条件：PL1 是功耗天花板，只有压到实际满载功耗之下才有效；");

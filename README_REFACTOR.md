@@ -116,7 +116,7 @@ HardwareProbe（探测） → HardwareLimitResolver（推导） → HardwareLimi
 ## 6. 运行
 
 ```bash
-dotnet build ThermalTuner.slnx                        # 构建（0 warning / 0 error）
+dotnet build ThermalTuner.sln                         # 构建（0 warning / 0 error）
 dotnet run --project src/ThermalPilot.Runner          # 环境报告 + 单测 + 模拟回路
 dotnet run --project tests/ThermalPilot.Core.Tests    # 仅单测
 dotnet run --project src/ThermalPilot.App             # 启动 WPF 界面

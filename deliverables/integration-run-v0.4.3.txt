@@ -1,0 +1,46 @@
+﻿
+==== 环境 ====
+时间       : 2026-11-04 14:50:00
+仓库       : D:\code\ThermalTuner
+管理员     : True
+模式       : Hardware=True Full=True
+报告       : D:\code\ThermalTuner\artifacts\test-runs\integration-20261104-145000.txt
+dotnet     : C:\Users\hp\.dotnet-sdk\dotnet.exe
+
+==== 1. 构建（Release） ====
+[PASS] build :: 跳过（-SkipBuild）
+
+==== 2. Core 功能测试（MsrEncoding / TurboRatio / ThermalCalibration / ThermalResistance / DecisionTree / PlatformProfile） ====
+[PASS] core-tests :: exit=0; 套件 : 6/6 通过（失败 0） / 断言 : 通过 173 / 失败 0（新增用例） / RESULT: PASS
+
+==== 3. Runner 环境自适应回路 ====
+[PASS] runner :: exit=0;     CPU 品牌   : Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz /     TjMax           : 100°C   (安全天花板 95°C) /     PL1 范围        : [15W, 65W]
+
+==== 4. 发布 App（框架依赖，win-x64） ====
+[PASS] publish-app :: exit=0; exe=True
+[PASS] lhm-version :: 实际 0.9.4.0，要求 0.9.4.0（WinRing0 可写后端）
+
+==== 5. App 冒烟与只读自检 ====
+[PASS] app-smoke :: exit=0; 5s; 温度/功耗    : TjMax 100°C · 安全上限 95°C · PL1 [15–65W] · PL2 [20–90W] / 微调持久化   : 已保存的软件侧优化值：PL1 45.0W · PL2 56.2W · Tau 16s · EPP 0 · 睿频未调节（2026-11-03 21:41）
+[PASS] app-msr-probe :: exit=0; 0s; 状态         : Writable / 可写 / 详情         : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 16s / lock=False；写入以回读校验确认）
+[PASS] app-rapl-probe :: exit=0; 7s; 状态        : Writable / 可写 / 详情        : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 16s / lock=False；写入以回读校验确认）
+
+==== 6. MSR 写入通道 ====
+[PASS] app-write-test :: exit=0; 0s; 通道状态   : Writable / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 16s / lock=False；写入以回读校验确认） / 写入前     : PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False
+[PASS] app-turbo-probe :: exit=0; 0s; 通道状态   : Writable / 可写 / 详情       : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认）
+
+==== 7. Monitor 冒烟（合成热模型） ====
+[PASS] monitor :: exit=0; ===== 汇总：9 拍 · 温度 44.9~46.0°C · 平均负载 86% · PL1 区间 35.0~56.0W / 命中分布：低载维持 2 拍 · 功耗墙突破 7 拍
+
+==== 8. 满载压测（真实写入 0x610 / 0x1AD，结束自动恢复） ====
+[PASS] stress-test :: exit=0; 90s; MSR 通道       : 可写 / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认） / 固件出厂默认   : 固件出厂默认（启动时备份）：PL1 45.0W · PL2 56.2W · Tau 28672s
+[PASS] calibrate-sweep :: exit=0; 99s; ThermalPilot 多档 PL1 阶梯压测智能标定 / MSR 通道           : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr) / 可写
+[PASS] turbo-stress :: exit=0; 100s; MSR 通道           : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr) / 可写 / 固件出厂默认       : 固件出厂默认（启动时备份）：PL1 45.0W · PL2 56.2W · Tau 28672s
+[PASS] final-msr-probe :: exit=0; 0s; 状态         : Writable / 可写 / 详情         : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认）
+
+==== 汇总 ====
+通过 : 15
+失败 : 0
+耗时 : 323 s
+RESULT: PASS
+报告 : D:\code\ThermalTuner\artifacts\test-runs\integration-20261104-145000.txt
