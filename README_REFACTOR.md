@@ -132,9 +132,8 @@ ThermalPilot.Monitor.exe --diag
 
 参数：`--profile silent|balanced|performance`、`--interval ms`、`--out FILE`。
 
-> **驱动口径差异（注意）**：主程序 `ThermalPilot.App` 固定 LHM **0.9.4 / WinRing0**；
-> 而 `ThermalPilot.Monitor` 这个重构期的独立诊断工具仍引用 **0.9.6**，代码里还留着
-> 「安装 PawnIO 签名驱动」的旧提示。两者通道不同，排障时以主程序为准。
+> **驱动口径（已统一）**：主程序 `ThermalPilot.App` 与诊断工具 `ThermalPilot.Monitor` 均固定
+> LHM **0.9.4 / WinRing0**，旧「安装 PawnIO 签名驱动」提示已从 Monitor 中移除。
 > WinRing0 属老式内核驱动，可能被 Defender / HVCI 内存完整性拦截；本机 HVCI 未开启，实测可加载。
 > 换机若 `--write-test` 失败，先查管理员权限与核心隔离设置，不要按 Monitor 的旧提示去装 PawnIO。
 

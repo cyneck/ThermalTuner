@@ -106,8 +106,8 @@ internal static class Program
             {
                 if (!warnedNoTemp)
                 {
-                    Emit("[警告] 未读到 CPU 温度。原因通常是 Windows 内核隔离(HVCI)阻止了硬件访问驱动。");
-                    Emit("       解决：安装 PawnIO 签名驱动 https://github.com/namazso/PawnIO/releases 后以管理员重试；");
+                    Emit("[警告] 未读到 CPU 温度。原因通常是 Windows 内核隔离(HVCI)阻止了 WinRing0 驱动加载。");
+                    Emit("       解决：以管理员身份重试；若 HVCI 开启，需关闭「内核隔离-内存完整性」后再试；");
                     Emit("       或先用 `--simulate` 以真实负载驱动合成热模型，验证决策回路。");
                     warnedNoTemp = true;
                 }
