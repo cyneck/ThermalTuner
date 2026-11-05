@@ -14,6 +14,10 @@ public class AutoCpuController
     private readonly TuningGains _gains = TuningGains.Default;
     private readonly HardwareLimits _limits;
     private double _pl1;
+    // 决策起点：未注入实读值时是平台区间的演算中点（通用公式），运行时由 App 层用 0x610 实读值覆盖。
+    // 不注入时决策树仍可跑，但 HasMeasuredPl1=false，界面不得把它当作「当前寄存器实值」。
+    private double _initialPl1;
+    // 风扇演算基线：软件不写 EC/PWM，此值只参与决策树内部演算，不代表实测转速。
     private double _currentFan = 50.0;
     private DateTime _last = DateTime.MinValue;
     // 稳态标定基线：标定时/会话轻载的同源 (T, P) 样本，供每拍前馈钳制
@@ -45,8 +49,34 @@ public class AutoCpuController
     public AutoCpuController(HardwareLimits limits)
     {
         _limits = limits ?? throw new ArgumentNullException(nameof(limits));
-        // 初始 PL1 钳制在硬件合法区间中位，避免越界
-        _pl1 = Math.Clamp(35.0, _limits.MinPL1, _limits.MaxPL1);
+        // 未注入实读值时，用平台合法区间的中点作为纯演算占位（通用公式，不是任何机型的默认值）。
+        // 真实运行时必须在 InitMsr 后调用 SetCurrentPl1W 注入 0x610 实读值；
+        // 在此之前 HasMeasuredPl1 = false，界面不得把它当作「当前寄存器实值」。
+        _initialPl1 = Math.Clamp((_limits.MinPL1 + _limits.MaxPL1) / 2.0,
+                                 _limits.MinPL1, _limits.MaxPL1);
+        _pl1 = _initialPl1;
+    }
+
+    /// <summary>
+    /// 是否已注入 MSR 0x610 实读的默认 PL1。
+    /// false 时 _pl1 只是平台区间的演算占位，不代表任何一台机器的真实功率。
+    /// </summary>
+    public bool HasMeasuredPl1 { get; private set; }
+
+    /// <summary>本机默认稳态功率（0x610 实读 PL1）；未注入时为 NaN。</summary>
+    public double MeasuredDefaultPl1W { get; private set; } = double.NaN;
+
+    /// <summary>
+    /// 注入 MSR 0x610 实读的当前 PL1，作为决策树首拍与 Reset 的基准。
+    /// 通用产品不预设任何机型的瓦数：默认功率以实读为准，读不到就明确标记未注入。
+    /// </summary>
+    public void SetCurrentPl1W(double pl1W)
+    {
+        if (double.IsNaN(pl1W) || pl1W <= 0) return;
+        MeasuredDefaultPl1W = pl1W;
+        HasMeasuredPl1 = true;
+        _initialPl1 = Math.Clamp(pl1W, _limits.MinPL1, _limits.MaxPL1);
+        _pl1 = _initialPl1;
     }
 
     public AutoCpuDecision Update(
@@ -156,7 +186,7 @@ public class AutoCpuController
 
     public void Reset()
     {
-        _pl1 = Math.Clamp(35.0, _limits.MinPL1, _limits.MaxPL1);
+        _pl1 = _initialPl1;
         _r.Reset();
         LatestReceipt = null;
     }

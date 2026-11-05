@@ -20,6 +20,16 @@
           <CheckBox x:Name="StressBox" Content="施加压测负载" Style="{StaticResource Switch}"
                     Margin="16,0,0,0" VerticalAlignment="Center"
                     Checked="Stress_Checked" Unchecked="Stress_Unchecked" />
+          <TextBlock Text="负载场景" Style="{StaticResource Label}" Margin="16,0,8,0" VerticalAlignment="Center" />
+          <ComboBox x:Name="KernelBox" Width="140" Height="30" VerticalContentAlignment="Center"
+                    SelectionChanged="Kernel_Changed" SelectedIndex="2">
+            <ComboBoxItem Content="整数 ALU" Tag="ScalarInt" />
+            <ComboBoxItem Content="标量浮点" Tag="ScalarFloat" />
+            <ComboBoxItem Content="SIMD/FMA（最重）" Tag="SimdFma" />
+            <ComboBoxItem Content="内存带宽" Tag="MemoryStream" />
+            <ComboBoxItem Content="混合轮换" Tag="Mixed" />
+            <ComboBoxItem Content="占空比脉冲" Tag="Pulse" />
+          </ComboBox>
           <TextBlock Text="采样间隔" Style="{StaticResource Label}" Margin="20,0,8,0" VerticalAlignment="Center" />
           <ComboBox x:Name="IntervalBox" Width="96" Height="30" VerticalContentAlignment="Center"
                     SelectionChanged="Interval_Changed">

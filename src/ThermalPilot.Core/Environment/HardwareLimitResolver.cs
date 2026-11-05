@@ -24,13 +24,14 @@ public static class HardwareLimitResolver
         {
             var limits = ResolveCore(env);
 
-            // 虚拟化环境额外收紧：功耗遥测不可信，压制最大可写 PL，防止超调
+            // 虚拟化环境额外收紧：功耗遥测不可信，按平台自身上限的比例压制最大可写 PL。
+            // 比例式收紧是通用规则；旧版写死 45W/65W 是从某台 i7-7700HQ 抄来的机型值，不适用于其它机器。
             if (env.IsVirtualized)
             {
                 limits = limits with
                 {
-                    MaxPL1 = Math.Min(limits.MaxPL1, 45.0),
-                    MaxPL2 = Math.Min(limits.MaxPL2, 65.0)
+                    MaxPL1 = Math.Max(limits.MinPL1 + 5.0, limits.MaxPL1 * 0.75),
+                    MaxPL2 = Math.Max(limits.MinPL2 + 5.0, limits.MaxPL2 * 0.75)
                 };
             }
 

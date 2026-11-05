@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using ThermalPilot.App.Services;
+using ThermalPilot.Core.Stress;
 
 namespace ThermalPilot.App.Views;
 
@@ -26,9 +27,24 @@ public partial class MonitorPage : UserControl
         else s.Start();
     }
 
-    private void Stress_Checked(object sender, RoutedEventArgs e) => Session?.SetStress(true);
+    /// <summary>当前选中的负载场景内核；场景切换会即时重建负载。</summary>
+    private StressKernel CurrentKernel =>
+        KernelBox.SelectedItem is ComboBoxItem { Tag: string tag } &&
+        StressScenarioCatalog.TryParseKernel(tag, out var k)
+            ? k : StressKernel.SimdFma;
+
+    private void Stress_Checked(object sender, RoutedEventArgs e)
+    {
+        if (Session is { } s) s.SetStress(true, s.Environment.LogicalCores, CurrentKernel);
+    }
 
     private void Stress_Unchecked(object sender, RoutedEventArgs e) => Session?.SetStress(false);
+
+    private void Kernel_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (StressBox.IsChecked == true && Session is { } s)
+            s.SetStress(true, s.Environment.LogicalCores, CurrentKernel);
+    }
 
     private void Interval_Changed(object sender, SelectionChangedEventArgs e)
     {

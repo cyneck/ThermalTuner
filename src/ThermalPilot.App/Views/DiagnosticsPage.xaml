@@ -118,10 +118,20 @@
         <StackPanel>
           <TextBlock Text="恢复机制" Style="{StaticResource H2}" />
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                     Text="写入前备份原值 → 崩溃看门狗 3 秒回滚 → 下次启动检测脏标记。当前为只读版本，尚无需要恢复的写入。" />
+                     Text="写入前备份 → 回读校验 → 失败回滚；异常退出后下次启动自动恢复。" />
           <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
             <Button Content="打开数据目录" Style="{StaticResource GhostButton}" Click="OpenDataDir_Click" />
           </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <StackPanel>
+          <TextBlock Text="环境自检报告" Style="{StaticResource H2}" />
+          <TextBox Text="{Binding CapabilityReportText, Mode=OneWay}" IsReadOnly="True"
+                   Height="150" Margin="0,8,0,0" TextWrapping="Wrap"
+                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                   FontFamily="Consolas" FontSize="11" />
         </StackPanel>
       </Border>
     </StackPanel>

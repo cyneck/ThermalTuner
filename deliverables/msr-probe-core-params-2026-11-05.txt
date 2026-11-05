@@ -1,0 +1,53 @@
+﻿== MSR 后端 ==
+后端         : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr)
+LHM 程序集   : LibreHardwareMonitorLib, Version=0.9.4.0, Culture=neutral, PublicKeyToken=null
+位置         : D:\code\ThermalTuner\src\ThermalPilot.App\bin\Debug\net8.0-windows\LibreHardwareMonitorLib.dll
+
+== Ring0 接口 ==
+MSR 相关方法 : 5 个
+  Void Open()
+  Void Close()
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx)
+  Boolean ReadMsr(UInt32 index, out UInt32& eax, out UInt32& edx, GroupAffinity affinity)
+  Boolean WriteMsr(UInt32 index, UInt32 eax, UInt32 edx)
+
+== 通道能力（只读，不写 MSR）==
+状态         : Writable / 可写
+详情         : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 16s / lock=False；写入以回读校验确认）
+0x610 原始   : 0x004281C200098168
+PL1          : 45.000 W (enabled=True)
+PL2          : 56.250 W (enabled=True, clamp=False)
+Tau          : 16 s
+Lock         : False
+
+== 核心参数寄存器实读（只读，不写 MSR）==
+  0x606 RAPL_POWER_UNIT       : 0x00000000000A0E03（可读）
+  0x610 PKG_POWER_LIMIT       : 0x004281C200098168（可读）
+  0x611 PKG_ENERGY_STATUS     : 0x00000000415B7C5A（可读）
+  0x770 HWP_CAPABILITIES      : 0x0000000000000001（可读）
+  0x772 HWP_REQUEST_PKG       : 不可读
+  0x774 HWP_REQUEST           : 0x0000019E0000261C（可读）
+  0x1A0 MISC_ENABLE           : 0x0000000000850089（可读）
+  0x1A2 TEMPERATURE_TARGET    : 0x0000000003640000（可读）
+  0x1AD TURBO_RATIO_LIMIT     : 0x0000000022232426（可读）
+  0x150 OC_MAILBOX/FIVR       : 0x000000000001857B（可读）
+  0x194 FLEX_RATIO            : 0x0000000000010000（可读）
+
+== 0x774 HWP_REQUEST 位域解码 ==
+  Min Perf       [7:0]   : 28
+  Max Perf       [15:8]  : 38
+  Desired Perf   [23:16] : 0（0 = 硬件自主选频）
+  EPP            [31:24] : 0（0=性能 / 255=省电）
+  Activity Win   [41:32] : 414
+  Package Control  bit42 : 0
+
+== 0x1A2 TEMPERATURE_TARGET 位域解码 ==
+  TjMax Target  [23:16] : 100 °C
+  TjMax Offset  [29:24] : 3
+
+== 0x150 OC Mailbox 电压偏移（只读解析）==
+  原始值         : 0x000000000001857B
+  Core/Cache 偏移: 0.0 mV（0 = 未施加降压）
+
+数据目录     : C:\Users\hp\AppData\Local\ThermalPilot
+启动备份     : C:\Users\hp\AppData\Local\ThermalPilot\backup\msr-startup.json

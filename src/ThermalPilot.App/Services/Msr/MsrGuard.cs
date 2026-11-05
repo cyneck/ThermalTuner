@@ -40,13 +40,15 @@ public sealed record MsrWriteResult(
 public sealed class MsrGuard : IDisposable
 {
     private const uint Msr = RaplPowerLimit.MsrPkgPowerLimit;
-    private const uint MsrHwpRequest = 0x774;          // MSR_HWP_REQUEST，EPP 在 [31:24]
+    private const uint MsrHwpRequest = HwpRequest.Msr;          // MSR_HWP_REQUEST 0x774
     private const uint MsrTurbo = TurboRatioLimit.MsrTurboRatioLimit;   // MSR_TURBO_RATIO_LIMIT = 0x1AD
+    private const uint MsrVoltage = FivrVoltage.Msr;            // MSR 0x150 OC Mailbox（个性化可选微调）
 
     private readonly MsrChannel _channel;
     private readonly string _backupDir;
     private readonly string _backupPath;
     private readonly string _eppBackupPath;
+    private readonly string _voltageBackupPath;
     private readonly string _pendingPath;
     private readonly string _turboBackupPath;
     private readonly string _turboPendingPath;
@@ -56,6 +58,7 @@ public sealed class MsrGuard : IDisposable
     private ulong? _startupRaw;
     private ulong? _startupEppRaw;
     private ulong? _startupTurboRaw;
+    private ulong? _startupVoltageRaw;
     private bool _eppSupported;
 
     public MsrGuard(MsrChannel channel, string dataDir)
@@ -64,6 +67,7 @@ public sealed class MsrGuard : IDisposable
         _backupDir = Path.Combine(dataDir, "backup");
         _backupPath = Path.Combine(_backupDir, "msr-startup.json");
         _eppBackupPath = Path.Combine(_backupDir, "msr-epp-startup.json");
+        _voltageBackupPath = Path.Combine(_backupDir, "msr-voltage-startup.json");
         _pendingPath = Path.Combine(_backupDir, "pending-restore.json");
         _turboBackupPath = Path.Combine(_backupDir, "msr-turbo-startup.json");
         _turboPendingPath = Path.Combine(_backupDir, "pending-turbo-restore.json");
@@ -74,6 +78,7 @@ public sealed class MsrGuard : IDisposable
 
         EnsureStartupBackup();
         EnsureEppBackup();
+        EnsureVoltageBackup();
         EnsureTurboBackup();
         PruneOldBackups();
     }
@@ -84,8 +89,17 @@ public sealed class MsrGuard : IDisposable
     public bool HasTurboPendingRestore => File.Exists(_turboPendingPath);
     /// <summary>0x774 是否可读（部分机型不暴露 HWP 请求寄存器）。</summary>
     public bool EppSupported => _eppSupported;
+    /// <summary>0x774 出厂整字备份（首次启动时记录，永不覆盖）。</summary>
+    public ulong? StartupHwpRaw => _startupEppRaw;
     /// <summary>0x1AD 睿频倍率表是否可读（出厂默认值的锚点）。</summary>
     public bool TurboSupported => _startupTurboRaw.HasValue;
+    /// <summary>0x150 是否可读。可读 ≠ 可写，写入能力必须靠实测。</summary>
+    public bool VoltageReadable => _startupVoltageRaw.HasValue;
+    public ulong? StartupVoltageRaw => _startupVoltageRaw;
+
+    /// <summary>当前 0x774 实读状态（读不到返回 null）。</summary>
+    public HwpRequestState? ReadHwp() =>
+        _channel.TryRead(MsrHwpRequest, out ulong raw) ? HwpRequest.Decode(raw) : null;
 
     public RaplLimits? StartupBackup
     {
@@ -160,7 +174,24 @@ public sealed class MsrGuard : IDisposable
         catch { /* 目录不可写时仅内存备份 */ }
     }
 
-    /// <summary>保留最近 20 份备份（PRD §10）；四类启动/待恢复文件不参与清理。</summary>
+    /// <summary>0x150 OC Mailbox 启动快照。仅作「出厂状态参考」，恢复一律用回零指令。</summary>
+    private void EnsureVoltageBackup()
+    {
+        if (File.Exists(_voltageBackupPath))
+        {
+            var saved = ReadRaw(_voltageBackupPath);
+            if (saved is not null) { _startupVoltageRaw = saved; return; }
+        }
+
+        // 0x150 是命令/响应接口：读到的只是上次命令响应，不是实时电压。
+        // 这里只记录「可读取」这一事实，不把响应值当成电压真值。
+        if (!_channel.TryRead(MsrVoltage, out ulong raw)) return;
+        _startupVoltageRaw = raw;
+        try { WriteRawFile(_voltageBackupPath, raw, "voltage-startup", msr: MsrVoltage); }
+        catch { /* 目录不可写时仅内存备份 */ }
+    }
+
+    /// <summary>保留最近 20 份备份（PRD §10）；启动/待恢复文件不参与清理。</summary>
     private void PruneOldBackups()
     {
         try
@@ -169,6 +200,7 @@ public sealed class MsrGuard : IDisposable
                 .Where(f => !f.EndsWith("msr-startup.json", StringComparison.OrdinalIgnoreCase)
                          && !f.EndsWith("msr-epp-startup.json", StringComparison.OrdinalIgnoreCase)
                          && !f.EndsWith("msr-turbo-startup.json", StringComparison.OrdinalIgnoreCase)
+                         && !f.EndsWith("msr-voltage-startup.json", StringComparison.OrdinalIgnoreCase)
                          && !f.EndsWith("pending-restore.json", StringComparison.OrdinalIgnoreCase)
                          && !f.EndsWith("pending-turbo-restore.json", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(File.GetLastWriteTimeUtc)
@@ -321,6 +353,124 @@ public sealed class MsrGuard : IDisposable
             }
             Audit("restore-epp", current, raw, "ok");
             return new MsrWriteResult(MsrWriteOutcome.Restored, "EPP 已恢复为固件默认值");
+        }
+    }
+
+    // ---------------- HWP 全字段（通用）/ 电压偏移（个性化可选） ----------------
+
+    /// <summary>
+    /// 通用 HWP 参数写入：Min Perf / Max Perf / EPP / Activity Window。
+    /// -1 = 保持原值；Desired Perf 与 Package Control 永不改写（保护 HWP 自主选频）。
+    /// 整字读-改-写 + 回读校验 + 失败回滚，与 0x610 同一套护栏。
+    /// </summary>
+    public MsrWriteResult ApplyHwp(int minPerf = -1, int maxPerf = -1,
+        int epp = -1, int activityWindow = -1, int firmwareMaxPerf = 0)
+    {
+        lock (_gate)
+        {
+            if (!_channel.CanWrite)
+                return new MsrWriteResult(MsrWriteOutcome.NotWritable, $"当前通道不可写：{_channel.Detail}");
+            if (!_eppSupported)
+                return new MsrWriteResult(MsrWriteOutcome.Rejected, "0x774 不可读，HWP 参数微调不可用");
+
+            var cur = ReadHwp();
+            if (cur is null)
+                return new MsrWriteResult(MsrWriteOutcome.WriteFailed, "写入前读取 0x774 失败，已中止");
+
+            int min = minPerf < 0 ? cur.Value.MinPerf : minPerf;
+            int max = maxPerf < 0 ? cur.Value.MaxPerf : maxPerf;
+            int ep = epp < 0 ? cur.Value.Epp : epp;
+            int aw = activityWindow < 0 ? cur.Value.ActivityWindow : activityWindow;
+            string? invalid = HwpRequest.Validate(min, max, ep, aw, firmwareMaxPerf);
+            if (invalid is not null)
+                return new MsrWriteResult(MsrWriteOutcome.Rejected, invalid);
+
+            if (!_channel.TryRead(MsrHwpRequest, out ulong original))
+                return new MsrWriteResult(MsrWriteOutcome.WriteFailed, "写入前读取 0x774 失败，已中止");
+
+            ulong target = HwpRequest.Encode(original, minPerf, maxPerf, epp, activityWindow);
+            if (target == original)
+                return new MsrWriteResult(MsrWriteOutcome.Success, "HWP 参数与当前实读一致，无需写入");
+
+            if (!_channel.TryWrite(MsrHwpRequest, target, out int hrWrite))
+            {
+                Audit("write-hwp", original, target, $"failed:hr=0x{hrWrite:X8}");
+                return new MsrWriteResult(MsrWriteOutcome.WriteFailed,
+                    $"驱动拒绝写入 0x774（HRESULT 0x{hrWrite:X8}），常见于 HWP 被 BIOS 锁定");
+            }
+
+            if (!_channel.TryRead(MsrHwpRequest, out ulong readback) || readback != target)
+            {
+                _channel.TryWrite(MsrHwpRequest, original);
+                Audit("write-hwp", original, target, "verify-failed:rolled-back");
+                return new MsrWriteResult(MsrWriteOutcome.VerifyFailed,
+                    "HWP 回读不一致，已自动回滚（可能被 Windows 电源计划 / Intel DTT 覆盖）");
+            }
+
+            Audit("write-hwp", original, target, "ok");
+            return new MsrWriteResult(MsrWriteOutcome.Success,
+                $"HWP 已写入并回读校验通过（{HwpRequest.Decode(readback).Describe}）");
+        }
+    }
+
+    /// <summary>
+    /// 个性化可选微调：Core/Cache 电压偏移（0x150 OC Mailbox）。
+    /// 只允许降压 [-150, 0] mV；两种写使能编码都试；任一失败都强制回零。
+    /// 注意：0x150 是命令/响应接口，回读判据是高位匹配，不是「电压值相等」。
+    /// </summary>
+    public MsrWriteResult ApplyVoltage(int offsetMv)
+    {
+        lock (_gate)
+        {
+            if (!_channel.CanWrite)
+                return new MsrWriteResult(MsrWriteOutcome.NotWritable, $"当前通道不可写：{_channel.Detail}");
+
+            string? invalid = FivrVoltage.Validate(offsetMv);
+            if (invalid is not null)
+                return new MsrWriteResult(MsrWriteOutcome.Rejected, invalid);
+
+            _channel.TryRead(MsrVoltage, out ulong before);   // 仅作审计基线，不是电压真值
+
+            for (int variant = 0; variant < FivrVoltage.EnableVariants; variant++)
+            {
+                ulong cmd = FivrVoltage.Encode(offsetMv, variant);
+                if (!_channel.TryWrite(MsrVoltage, cmd, out _)) continue;
+                if (_channel.TryRead(MsrVoltage, out ulong readback)
+                    && FivrVoltage.ResponseMatches(cmd, readback))
+                {
+                    Audit("write-voltage", before, readback, $"ok:variant={variant}:{offsetMv}mV");
+                    return new MsrWriteResult(MsrWriteOutcome.Success,
+                        $"电压偏移 {offsetMv} mV 已下发并读回校验通过（0x{readback:X16}）；重启即失效");
+                }
+            }
+
+            // 任何失败都不留半写入状态：强制回零
+            _channel.TryWrite(MsrVoltage, FivrVoltage.Zero);
+            Audit("write-voltage", before, 0, "failed:zeroed");
+            return new MsrWriteResult(MsrWriteOutcome.WriteFailed,
+                "电压偏移写入被 BIOS / Plundervolt 修复微码拒绝，或读回不匹配；已强制回零。" +
+                "该 CPU 不支持此个性化项，通用参数不受影响。");
+        }
+    }
+
+    /// <summary>退出 / 恢复原值时把电压偏移回零（写入易失寄存器，不改固件）。</summary>
+    public MsrWriteResult RestoreVoltage()
+    {
+        lock (_gate)
+        {
+            if (!_channel.CanWrite)
+                return new MsrWriteResult(MsrWriteOutcome.NotWritable, "通道不可写，电压偏移将在重启后自动失效");
+
+            _channel.TryRead(MsrVoltage, out ulong before);
+            bool ok = true;
+            for (int i = 0; i < 2; i++)
+                ok &= _channel.TryWrite(MsrVoltage, FivrVoltage.Zero, out _);
+
+            Audit("restore-voltage", before, 0, ok ? "ok" : "failed");
+            return ok
+                ? new MsrWriteResult(MsrWriteOutcome.Restored, "电压偏移已回零")
+                : new MsrWriteResult(MsrWriteOutcome.RestoreFailed,
+                    "回零写入失败；重启机器即可由固件恢复默认（MSR 易失）");
         }
     }
 

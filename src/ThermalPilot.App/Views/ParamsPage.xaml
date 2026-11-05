@@ -28,22 +28,14 @@
                          Text="{Binding MsrSummary, Mode=OneWay}" />
             </Border>
           </StackPanel>
-          <TextBlock Style="{StaticResource Label}" Margin="0,6,0,0"
-                     Text="默认只读，避免误改；解锁后可编辑并校验。范围来自本机探测结果，不是硬编码。" />
-          <TextBlock x:Name="MsrHint" Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0"
-                     TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}"
-                     Text="当前为演练模式：会完整走校验与确认，但不写硬件。" />
-          <TextBlock Text="{Binding FwDivergeText, Mode=OneWay}" Style="{StaticResource Label}" FontSize="11"
-                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}" />
-          <TextBlock Text="{Binding FwDefaultText, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="11"
-                     Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
-          <TextBlock Text="{Binding SavedTuningText, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="11"
-                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
-          <TextBlock Text="{Binding EppHintText, Mode=OneWay}" Style="{StaticResource Label}" FontSize="11"
-                     Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource Warn}" />
-          <TextBlock Text="「当前生效」为 MSR 实读值；固件出厂默认不可持久化（掉电即恢复），标定/微调值属于软件侧，写入成功后保存到本机并在每次开机重放。高于固件默认值只要落在硬件范围内即属正常优化。"
-                     Style="{StaticResource Label}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                     Foreground="{StaticResource TextTertiary}" />
+          <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+            <TextBlock x:Name="MsrHint" Style="{StaticResource Label}" FontSize="11"
+                       Foreground="{StaticResource TextTertiary}" Text="演练模式：只校验不写硬件。" />
+            <TextBlock Text="{Binding CapabilityOneLineText, Mode=OneWay}" Style="{StaticResource Mono}"
+                       FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondary}"
+                       ToolTip="{Binding CapabilityReportText, Mode=OneWay}" />
+          </StackPanel>
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -51,6 +43,9 @@
                   Click="Unlock_Click" />
           <Button Content="恢复默认" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
                   Click="Reset_Click" />
+          <Button Content="重新自检" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                  Click="EnvCheck_Click"
+                  ToolTip="管理员下补测写入能力（同值写回 / −10mV 后回零）；完整报告见「诊断与日志」" />
         </StackPanel>
       </Grid>
     </Border>
@@ -74,6 +69,8 @@
         </Grid>
 
         <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,8,0,0" />
+        <TextBlock Text="通用参数 · 智能标定可推荐（L2）／用户可编辑（L3）" Style="{StaticResource Label}"
+                   FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0" Foreground="{StaticResource AccentDeep}" />
 
         <!-- PL1 -->
         <Grid Margin="0,10,0,0">
@@ -99,7 +96,7 @@
             <Run Text="{Binding Limits.MaxPL1, Mode=OneWay}" /><Run Text="] W" />
           </TextBlock>
           <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
-                     TextWrapping="Wrap" Text="长期可持续的封装功耗，决定稳态温度与风扇噪音。" />
+                     TextWrapping="Wrap" Text="长期可持续的封装功耗，决定稳态温度，并间接影响 EC 自动调速的风扇噪音（软件不直写风扇）。" />
         </Grid>
 
         <!-- PL2 -->
@@ -178,6 +175,83 @@
                      TextWrapping="Wrap" Text="芯片自主调频时的偏好权重，影响响应速度与瞬时功耗。" />
         </Grid>
 
+        <!-- Min Perf (0x774 [7:0]) -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Min Perf 最低性能" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x774 [7:0]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding FwMinPerfText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="13" VerticalAlignment="Center" />
+          <TextBox x:Name="MinPerfBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="[0, 255] · 且 ≤ Max Perf" Style="{StaticResource Mono}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="HWP 最低性能请求，影响轻载频率与待机功耗；设得过高会阻止 CPU 降频。" />
+        </Grid>
+
+        <!-- Max Perf (0x774 [15:8]) -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Max Perf 最高性能" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x774 [15:8]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding FwMaxPerfText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="13" VerticalAlignment="Center" />
+          <TextBox x:Name="MaxPerfBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap">
+            <Run Text="[Min Perf, " /><Run Text="{Binding FwHwpMaxPerf, Mode=OneWay}" /><Run Text="] · 不做超频" />
+          </TextBlock>
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="直接限制 HWP 最高性能请求，比 PL1 更直接地压频率、功耗与温度；不得超过出厂上限。" />
+        </Grid>
+
+        <!-- Activity Window (0x774 [41:32]) -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Activity Window" Style="{StaticResource RowText}" FontWeight="SemiBold" />
+            <TextBlock Text="MSR 0x774 [41:32]" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding FwActivityWindowText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="13" VerticalAlignment="Center" />
+          <TextBox x:Name="ActivityWindowBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="[0, 1023] · 出厂 414" Style="{StaticResource Mono}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Text="EPP 偏好的平滑窗口，影响选频响应速度与瞬时功耗；数值越大越迟钝。" />
+        </Grid>
+
+        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,12,0,0" />
+        <TextBlock Text="个性化可选微调 · 仅用户手动（L3），智能标定与应用标定一律不碰" Style="{StaticResource Label}"
+                   FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0" Foreground="{StaticResource Warn}" />
+
         <!-- 睿频倍率上限 (MSR 0x1AD) -->
         <Grid Margin="0,12,0,0">
           <Grid.ColumnDefinitions>
@@ -201,6 +275,34 @@
                      FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
           <TextBlock Grid.Column="4" Text="{Binding TurboHintText, Mode=OneWay}" Style="{StaticResource Label}"
                      FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </Grid>
+
+        <!-- 电压偏移 (MSR 0x150 OC Mailbox)：个性化高风险项，需二次确认 -->
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="130" />
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Core/Cache 电压偏移" Style="{StaticResource RowText}" FontWeight="SemiBold"
+                       Foreground="{StaticResource Warn}" />
+            <TextBlock Text="MSR 0x150 · 可选" Style="{StaticResource Mono}" FontSize="10"
+                       Foreground="{StaticResource TextTertiary}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Style="{StaticResource Mono}" FontSize="13" VerticalAlignment="Center">
+            <Run Text="{Binding AppliedVoltageMv, Mode=OneWay}" /><Run Text=" mV" />
+          </TextBlock>
+          <TextBox x:Name="VoltageBox" Grid.Column="2" Style="{StaticResource FieldBox}" IsEnabled="False"
+                   TextChanged="Value_Changed" />
+          <TextBlock Grid.Column="3" Text="[-150, 0] mV · 禁止加压" Style="{StaticResource Mono}"
+                     FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="4" Style="{StaticResource Label}" FontSize="11" VerticalAlignment="Center"
+                     TextWrapping="Wrap" Foreground="{StaticResource Warn}"
+                     ToolTip="{Binding CpuCapabilityText, Mode=OneWay}"
+                     Text="降压能实际降低温度与功耗，可能让标定推荐值变化；但并非所有 CPU 可写（10 代+/非 Intel/BIOS 锁）。写入易失、重启即恢复，仍可能造成不稳定或蓝屏，需二次确认。" />
         </Grid>
       </StackPanel>
     </Border>

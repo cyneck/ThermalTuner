@@ -16,7 +16,7 @@
         <StackPanel>
           <TextBlock Text="使用档位" Style="{StaticResource H2}" />
           <TextBlock Style="{StaticResource Label}" Margin="0,4,0,12"
-                     Text="档位只是意图，具体 PL1 由决策树按温度与热阻动态给出。" />
+                     Text="档位只是意图，具体 PL1 由决策树按温度与热阻动态给出；风扇由 EC 按温度曲线自动调速，软件不直接控制转速。" />
 
           <UniformGrid Columns="3">
             <RadioButton Style="{StaticResource ModeCard}" GroupName="mode" Tag="silent"
@@ -24,7 +24,7 @@
               <StackPanel>
                 <TextBlock Text="静音优先" Style="{StaticResource H2}" />
                 <TextBlock Style="{StaticResource Mono}" Margin="0,6,0,0" FontSize="11">
-                  <Run Text="天花板 85°C · 风扇 ≤55%" />
+                  <Run Text="天花板 85°C · 最保守" />
                 </TextBlock>
                 <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0"
                            Text="适合办公、夜间" TextWrapping="Wrap" />
@@ -36,7 +36,7 @@
               <StackPanel>
                 <TextBlock Text="均衡" Style="{StaticResource H2}" />
                 <TextBlock Style="{StaticResource Mono}" Margin="0,6,0,0" FontSize="11">
-                  <Run Text="天花板 88°C · 风扇 ≤75%" />
+                  <Run Text="天花板 88°C · 折中" />
                 </TextBlock>
                 <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0"
                            Text="默认推荐" TextWrapping="Wrap" />
@@ -48,7 +48,7 @@
               <StackPanel>
                 <TextBlock Text="性能优先" Style="{StaticResource H2}" />
                 <TextBlock Style="{StaticResource Mono}" Margin="0,6,0,0" FontSize="11">
-                  <Run Text="天花板 92°C · 风扇 100%" />
+                  <Run Text="天花板 92°C · 最激进" />
                 </TextBlock>
                 <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0"
                            Text="适合编译、渲染" TextWrapping="Wrap" />
@@ -194,7 +194,7 @@
           </StackPanel>
 
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
-                     Text="12 秒空载基线 → 满载升温至温度平台 → 10 秒稳态采样，全程 1–3 分钟（视散热条件），风扇会变响；期间请勿操作系统。按钮置灰时悬停可看缺少哪项读数。" />
+                     Text="12 秒空载基线 → 全核 SIMD/FMA 高功耗场景升温至温度平台 → 10 秒稳态采样，全程 1–3 分钟（视散热条件）；风扇可能变响，由 EC 按温度自动调速，软件不直控。按钮置灰时悬停可看缺少哪项读数。" />
         </StackPanel>
       </Border>
 
@@ -213,7 +213,7 @@
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0" Grid.Column="0">
-              <TextBlock Text="PL1" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="决策 PL1" Style="{StaticResource Label}" FontSize="11" />
               <TextBlock Style="{StaticResource Mono}" FontSize="13">
                 <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
               </TextBlock>
@@ -236,7 +236,7 @@
               <TextBlock Text="{Binding EppText, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="13" />
             </StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
-              <TextBlock Text="风扇目标" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="风扇演算值（未下发）" Style="{StaticResource Label}" FontSize="11" />
               <TextBlock Style="{StaticResource Mono}" FontSize="13">
                 <Run Text="{Binding FanText, Mode=OneWay}" /><Run Text=" %" />
               </TextBlock>
@@ -246,6 +246,8 @@
               <TextBlock Text="{Binding ProfileLabel, Mode=OneWay}" Style="{StaticResource Mono}" FontSize="13" />
             </StackPanel>
           </Grid>
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
+                     Text="风扇百分比是决策树演算的建议值，未下发到任何硬件；实际转速由 EC 按温度曲线自动调节，软件只能通过降低发热间接影响。" />
         </StackPanel>
       </Border>
     </StackPanel>

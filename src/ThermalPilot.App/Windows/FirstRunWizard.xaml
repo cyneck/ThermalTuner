@@ -120,7 +120,7 @@
         <StackPanel>
           <TextBlock Text="基线测量（约 1–3 分钟，可跳过）" Style="{StaticResource H2}" />
           <TextBlock Style="{StaticResource Label}" Margin="0,4,0,14" TextWrapping="Wrap"
-                     Text="先用空载 12 秒记录基线，再满载升温到温度平台，实测本机稳态热阻（ΔT/ΔP），之后才能预测「再升一档会不会超标」。风扇会变响，属正常现象。" />
+                     Text="先用空载 12 秒记录基线，再以全核 SIMD/FMA 高功耗场景升温到温度平台，实测本机稳态热阻（ΔT/ΔP），之后才能预测「再升一档会不会超标」。风扇可能变响，由 EC 按温度自动调速，属正常现象。" />
 
           <ProgressBar Height="6" Maximum="100" Value="{Binding CalibrationProgress, Mode=OneWay}"
                        Foreground="{StaticResource Accent}" Background="{StaticResource BgSubtle}"

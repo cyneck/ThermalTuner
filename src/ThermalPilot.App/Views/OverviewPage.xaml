@@ -47,13 +47,13 @@
 
       <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0,0,12,0">
         <StackPanel>
-          <TextBlock Text="决策 PL1（目标）" Style="{StaticResource Label}" />
+          <TextBlock Text="决策 PL1（算法目标）" Style="{StaticResource Label}" />
           <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
             <TextBlock Style="{StaticResource Metric}" Text="{Binding Pl1Text, Mode=OneWay}" />
             <TextBlock Text=" W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
           </StackPanel>
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
-            <Run Text="PL2 " /><Run Text="{Binding Pl2Text, Mode=OneWay}" /><Run Text=" W · 仅只读" />
+            <Run Text="默认功率 " /><Run Text="{Binding DefaultPowerText, Mode=OneWay}" /><Run Text=" W（实读 PL1）· 目标非实值" />
           </TextBlock>
         </StackPanel>
       </Border>
@@ -154,7 +154,7 @@
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-              <TextBlock Text="PL1" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="决策 PL1" Style="{StaticResource Label}" FontSize="11" />
               <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
                 <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
               </TextBlock>

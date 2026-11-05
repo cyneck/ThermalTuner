@@ -27,7 +27,7 @@ public class CeilingExceededNode : IDecisionNode
                 TargetPL2W = nextPL1 * profile.Pl2Ratio,
                 TargetTauS = profile.TauSeconds,
                 TargetEpp = profile.Epp,
-                TargetFanPercent = profile.FanMaxPercent, // 顶格风扇进行压制
+                TargetFanPercent = profile.FanMaxPercent, // 演算建议值，未下发硬件（EC 自调）
                 Direction = -1,
                 ForceImmediateApply = false
             };

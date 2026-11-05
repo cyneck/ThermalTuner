@@ -5,6 +5,7 @@ using System.Text;
 using ThermalPilot.App.Services;
 using ThermalPilot.App.Services.Msr;
 using ThermalPilot.Core.Environment;
+using ThermalPilot.Core.Stress;
 
 namespace ThermalPilot.App;
 
@@ -19,7 +20,10 @@ namespace ThermalPilot.App;
 ///
 /// 用法：
 ///   ThermalPilot.App.exe --stress-test --out report.txt --csv samples.csv
-///                        [--seconds 45] [--low-pl1 25]
+///                        [--seconds 45] [--low-pl1 25] [--kernel SimdFma]
+///   --low-pl1 省略时，降墙档按 0x610 实读默认 PL1 的 40% 比例推导（通用规则，不预设机型瓦数）。
+///   --kernel 可选 Idle / ScalarInt / ScalarFloat / SimdFma / MemoryStream / Mixed / Pulse；
+///   完整场景阶梯与功耗覆盖率请用 --scenario-sweep。
 /// 说明：不带消息泵运行时 DispatcherTimer 不会自走，因此这里显式逐拍驱动 SampleOnce()。
 /// </summary>
 internal static class StressProbe
@@ -43,7 +47,8 @@ internal static class StressProbe
         double FwPl1W, double DecisionPl1W);
 
     public sealed record Options(
-        string OutPath, string CsvPath, int LoadSeconds, double LowPl1W);
+        string OutPath, string CsvPath, int LoadSeconds, double LowPl1W,
+        StressKernel Kernel = StressKernel.SimdFma);
 
     public static int Run(Options opt)
     {
@@ -122,6 +127,10 @@ internal static class StressProbe
             sb.AppendLine("== 4. 压力测试阶段 ==");
             sb.AppendLine($"每段满载 {opt.LoadSeconds}s，采样间隔 {session.Settings.IntervalMs}ms；" +
                           $"满载用 {fullThreads} 个后台线程，低负载对照用 {LowLoadThreads} 个线程。");
+            sb.AppendLine($"负载场景           : {opt.Kernel}（{fullThreads} 线程 / " +
+                          (StressWorker.SimdAvailable ? "AVX2+FMA 可用" : "SIMD 回退") +
+                          "）；可用 --kernel 切换，完整场景覆盖用 --scenario-sweep。");
+            sb.AppendLine($"默认稳态功率(实读) : {F(session.DefaultPowerW, 1)} W（0x610 实读 PL1，非机型常量）");
             if (writable)
             {
                 sb.AppendLine("说明：本轮执行写入式 A/B/C（固件默认 → 降墙 → 放宽），每段切换都会真实改写 0x610 并回读校验；");
@@ -134,33 +143,38 @@ internal static class StressProbe
             }
             sb.AppendLine();
 
-            RunPhase(session, rows, "IDLE", false, IdleSeconds, fullThreads);
+            RunPhase(session, rows, "IDLE", false, IdleSeconds, fullThreads, opt.Kernel);
 
             if (writable)
             {
-                RunPhase(session, rows, "LOAD_FW", true, opt.LoadSeconds, fullThreads);
+                RunPhase(session, rows, "LOAD_FW", true, opt.LoadSeconds, fullThreads, opt.Kernel);
 
                 // 固件 Tau≈28672s（≈8h）是超长平均窗口，短时压测里 PL1 几乎不会钳制功耗。
                 // 因此降墙/放宽阶段同时把时间窗口缩到 8s，让功耗墙在本段内真正生效。
                 const double shortTau = 8.0;
-                double low = Math.Min(opt.LowPl1W, Math.Max(10, fwPl1 * 0.55));
+                // 降墙/放宽档位以「实读默认功率」按比例推导，通用规则，不写死任何机型的瓦数。
+                double low = opt.LowPl1W > 0
+                    ? Math.Clamp(opt.LowPl1W, session.Limits.MinPL1, fwPl1)
+                    : Math.Clamp(fwPl1 * 0.40, session.Limits.MinPL1, fwPl1);
                 var rLow = session.ApplyLimits(low, Math.Max(fwPl2, low * 1.25), shortTau, writeTimeWindow: true);
                 sb.AppendLine($"[切换] 降墙 PL1 {low:F1}W / Tau {shortTau:F0}s → {rLow.Outcome} / {rLow.Message}");
-                RunPhase(session, rows, "LOAD_LOW", true, opt.LoadSeconds, fullThreads);
+                RunPhase(session, rows, "LOAD_LOW", true, opt.LoadSeconds, fullThreads, opt.Kernel);
 
-                double high = fwPl1 + 20;
+                double high = Math.Clamp(fwPl1 * 1.30, fwPl1, session.Limits.MaxPL1);
                 var rHigh = session.ApplyLimits(high, Math.Max(fwPl2, high * 1.25), shortTau, writeTimeWindow: true);
                 sb.AppendLine($"[切换] 放宽 PL1 {high:F1}W / Tau {shortTau:F0}s → {rHigh.Outcome} / {rHigh.Message}");
-                RunPhase(session, rows, "LOAD_HIGH", true, opt.LoadSeconds, fullThreads);
+                RunPhase(session, rows, "LOAD_HIGH", true, opt.LoadSeconds, fullThreads, opt.Kernel);
             }
             else
             {
-                RunPhase(session, rows, "LOAD_FW", true, opt.LoadSeconds, fullThreads);
-                RunPhase(session, rows, "COOL", false, CoolSeconds, fullThreads);
-                RunPhase(session, rows, "LOAD_LOWLOAD", true, opt.LoadSeconds, LowLoadThreads);
+                RunPhase(session, rows, "LOAD_FW", true, opt.LoadSeconds, fullThreads, opt.Kernel);
+                RunPhase(session, rows, "COOL", false, CoolSeconds, fullThreads, opt.Kernel);
+                // 低负载对照刻意换回标量浮点 + 少线程，确保功耗真的下降
+                RunPhase(session, rows, "LOAD_LOWLOAD", true, opt.LoadSeconds, LowLoadThreads,
+                    StressKernel.ScalarFloat);
             }
 
-            RunPhase(session, rows, "COOL_END", false, EndCoolSeconds, fullThreads);
+            RunPhase(session, rows, "COOL_END", false, EndCoolSeconds, fullThreads, opt.Kernel);
             session.SetStress(false);
 
             // ---- 恢复 ----
@@ -219,9 +233,10 @@ internal static class StressProbe
     }
 
     private static void RunPhase(SessionState session, List<Row> rows,
-        string phase, bool load, int seconds, int threads)
+        string phase, bool load, int seconds, int threads,
+        StressKernel kernel = StressKernel.SimdFma)
     {
-        session.SetStress(load, threads);
+        session.SetStress(load, threads, kernel);
         var sw = Stopwatch.StartNew();
         int interval = Math.Max(250, session.Settings.IntervalMs);
         while (sw.Elapsed.TotalSeconds < seconds)
@@ -272,7 +287,8 @@ internal static class StressProbe
         sb.AppendLine($"① 满载是否触及固件功耗墙 : 峰值包功耗 {F(peakP, 1)}W / 固件 PL1 {F(fwPl1, 1)}W " +
                       $"= {(double.IsNaN(peakP) ? "--" : (peakP / fwPl1 * 100).ToString("F0", CultureInfo.InvariantCulture) + "%")}");
         if (!double.IsNaN(peakP) && peakP < fwPl1 * 0.9)
-            sb.AppendLine("   → 本机在该负载下根本没顶到 PL1 天花板。把 PL1 调高（如 49W / 65W）不会产生任何可观测差异，");
+            sb.AppendLine("   → 该场景没顶到 PL1 天花板，往上调天花板不会产生任何可观测差异；");
+            sb.AppendLine("     可先跑 --scenario-sweep 找出更高功耗的负载场景，再判断瓶颈是否在 PL1。");
         sb.AppendLine("     这正是『智能调优没有直观感受』的核心原因之一：调的是上限，而实际功耗远在上限之下。");
 
         double decisionMean = fw.DecisionPl1W;
@@ -333,11 +349,11 @@ internal static class StressProbe
 
         if (!double.IsNaN(rth))
         {
-            double low = Math.Min(opt.LowPl1W, Math.Max(10, fwPl1 * 0.55));
+            double low = opt.LowPl1W > 0 ? opt.LowPl1W : fwPl1 * 0.40;
             double predictedDrop = (fw.PowerW - low) * rth;
             sb.AppendLine($"⑤ 定量外推（稳态）         : 把 PL1 从 {F(fwPl1, 1)}W 降到 {F(low, 1)}W，" +
                           $"按稳态热阻 {F(rth, 2)} K/W，长期稳态温度预计下降约 {F(Math.Max(0, predictedDrop), 1)}°C；");
-            sb.AppendLine($"   把 PL1 放宽到 {F(fwPl1 + 20, 1)}W 则预计 <1°C 变化（实际功耗 {F(fw.PowerW, 1)}W 远低于墙）。");
+            sb.AppendLine($"   把 PL1 按比例放宽到 {F(fwPl1 * 1.30, 1)}W 则预计 <1°C 变化（实际功耗 {F(fw.PowerW, 1)}W 远低于墙）。");
             sb.AppendLine("   注意：这是稳态估计，短时实测降温幅度会因热容偏小（见 ③）。");
         }
 
@@ -351,7 +367,7 @@ internal static class StressProbe
             sb.AppendLine("   收尾已恢复固件默认值。『软件只算不写』的判断已被实测推翻。");
             sb.AppendLine("3) 参数生效条件：PL1 是功耗天花板，只有压到实际满载功耗之下才有效；");
             double lowReal = stats.TryGetValue("LOAD_LOW", out var lr) ? lr.FwPl1W : opt.LowPl1W;
-            double highReal = stats.TryGetValue("LOAD_HIGH", out var hr) ? hr.FwPl1W : fwPl1 + 20;
+            double highReal = stats.TryGetValue("LOAD_HIGH", out var hr) ? hr.FwPl1W : fwPl1 * 1.30;
             sb.AppendLine($"   本机满载峰值 {F(peakP, 1)}W（固件 PL1 {F(fwPl1, 1)}W 的 {F(peakP / fwPl1 * 100, 0)}%），" +
                           $"放宽到 {F(highReal, 0)}W 无意义，压到 {F(lowReal, 0)}W 才有限制作用。");
             sb.AppendLine("4) 固件 Tau≈28672s 是超长平均窗口，短时压测必须同时缩短 Tau 才能观察到钳制；");

@@ -1,0 +1,14 @@
+﻿== 0x774 HWP 通用参数写入自检 ==
+通道状态   : Writable / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 16s / lock=False；写入以回读校验确认）
+写入前     : Min 28 / Max 38 / Desired 0 / EPP 0 / AW 414 / 0x0000019E0000261C
+出厂备份   : 0x0000019E0000261C
+探针目标   : Min 27 / Max 37 / EPP 128 / AW 413
+探针写入   : Success / HWP 已写入并回读校验通过（Min 27 / Max 37 / Desired 0 / EPP 128 / AW 413）
+即时实读   : Min 27 / Max 37 / Desired 0 / EPP 128 / AW 413
+250ms 实读 : Min 28 / Max 38 / Desired 0 / EPP 0 / AW 414
+1.25s 实读 : Min 28 / Max 38 / Desired 0 / EPP 0 / AW 414
+恢复出厂   : Restored / EPP 已是固件默认值
+最终实读   : Min 28 / Max 38 / Desired 0 / EPP 0 / AW 414
+
+RESULT: WARN（0x774 瞬时写入 + 回读校验通过，但随后被系统电源策略 / DTT 覆盖回原值）；
+       本平台 HWP 项不保证持续生效，产品不应对其做自动推荐承诺；已恢复出厂基线。

@@ -11,7 +11,9 @@ var suites = new (string Name, Action Run)[]
     ("ThermalCalibration", () => new ThermalCalibrationTests().RunAllTests()),
     ("ThermalResistance",  () => new ThermalResistanceTests().RunAllTests()),
     ("DecisionTree",       () => new DecisionTreeTests().RunAllTests()),
-    ("PlatformProfile",    () => new PlatformProfileTests().RunAllTests())
+    ("PlatformProfile",    () => new PlatformProfileTests().RunAllTests()),
+    ("StressScenario",     () => new StressScenarioTests().RunAllTests()),
+    ("AdvancedParams",     () => new AdvancedParamsTests().RunAllTests())
 };
 
 int failedSuites = 0;

@@ -8,6 +8,7 @@ using ThermalPilot.Core;
 using ThermalPilot.Core.Environment;
 using ThermalPilot.App.Services.Msr;
 using ThermalPilot.Core.Msr;
+using ThermalPilot.Core.Stress;
 using ThermalPilot.Core.Taxonomy;
 
 namespace ThermalPilot.App.Services;
@@ -64,6 +65,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private RaplLimits? _fwLimits;
     private double _fwEpp = double.NaN;
     private TurboRatioState? _fwTurbo;
+    private HwpRequestState? _fwHwp;
+    /// <summary>本次会话已成功下发的电压偏移（mV，0 = 未施加）。仅内存态，重启即失效。</summary>
+    private int _appliedVoltageMv;
     private readonly List<RawSample> _raw = new();
 
     private readonly record struct RawSample(
@@ -71,6 +75,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
     private StressLoad? _stress;
     private int _stressThreads = -1;
+    private StressKernel _stressKernel = StressKernel.ScalarFloat;
+    private double _stressDuty = 1.0;
     private double _prevTemp = double.NaN;
     // 稳态预测基线：会话内最低功耗（且温度不再上升）的轻载样本
     private double _basePowerW = double.NaN;
@@ -95,6 +101,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     {
         Settings = SettingsStore.Load();
         Environment = HardwareProbe.Probe();
+        CpuCaps = ThermalPilot.Core.Taxonomy.CpuCapability.Probe(Environment.BrandString);
         _controller = new AutoCpuController(HardwareLimitResolver.Resolve(Environment));
         LoadPersistedCalibration();
         IsElevated = CheckElevated();
@@ -103,6 +110,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
         _timer.Interval = TimeSpan.FromMilliseconds(Settings.IntervalMs);
         _timer.Tick += (_, _) => Tick();
+        // 首次安装启动 + 每次启动都刷新一次只读能力快照：
+        // 提权重启后寄存器可读性会变，禁用清单必须跟着更新，不能沿用旧快照。
+        InitializeEnvironmentCheck();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -148,8 +158,24 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public string TjMaxText => $"TjMax {Limits.TjMax:F0}°C · 安全上限 {Limits.MaxSafeCeiling:F0}°C";
     public string PlRangeText => $"PL1 [{Limits.MinPL1:F0}–{Limits.MaxPL1:F0}W] · PL2 [{Limits.MinPL2:F0}–{Limits.MaxPL2:F0}W]";
 
-    /// <summary>预测稳态用的功耗基准：固件 PL1 与平台上限取小（读不到则用平台上限）。</summary>
-    public double PowerBasisW => _firmwarePl1W > 0 ? Math.Min(Limits.MaxPL1, _firmwarePl1W) : Limits.MaxPL1;
+    /// <summary>
+    /// 本机默认稳态功率：0x610 实读的出厂默认 PL1。
+    /// 通用产品不预设任何机型瓦数——读到的就是这台机器的默认功率；读不到则为 NaN，绝不拿查表值冒充。
+    /// </summary>
+    public double DefaultPowerW
+    {
+        get
+        {
+            if (_guard?.StartupBackup is { } b && b.Pl1W > 0) return b.Pl1W;
+            return _fwLimits is { } lim && lim.Pl1W > 0 ? lim.Pl1W : double.NaN;
+        }
+    }
+    public string DefaultPowerText => double.IsNaN(DefaultPowerW) ? "--" : DefaultPowerW.ToString("F1");
+
+    /// <summary>预测稳态用的功耗基准：取实读 PL1（当前生效的默认功率），读不到才退回平台上限。</summary>
+    public double PowerBasisW => _firmwarePl1W > 0
+        ? _firmwarePl1W
+        : (double.IsNaN(DefaultPowerW) ? Limits.MaxPL1 : DefaultPowerW);
     public string PowerBasisText => $"{PowerBasisW:F0}W";
 
     // ---------------- 固件实读值（高级参数页「当前生效」列） ----------------
@@ -173,6 +199,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             string origin = def is not null && Math.Abs(def.Value.Pl1W - _fwLimits.Value.Pl1W) > 0.5
                 ? "当前生效值已偏离固件出厂默认（软件重放或外部工具写入）"
                 : "当前生效值即固件出厂默认";
+            if (double.IsNaN(_pl1W) || _pl1W <= 0)
+                return $"固件实读 PL1 {_fwLimits.Value.Pl1W:F1}W；决策目标尚未产生（等待首拍采样）。{origin}";
             double d = _fwLimits.Value.Pl1W - _pl1W;
             return Math.Abs(d) < 0.5
                 ? $"决策目标与固件实值一致（{origin}）。"
@@ -209,8 +237,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         : "--（0x1AD 不可读）";
     public string TurboHintText => _fwTurbo is { } t
         ? $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz；" +
-          $"允许把各档拉平到 {t.MaxTier}（{t.MaxGhz:F1}GHz）以释放全核睿频，" +
-          "但不得超过出厂单核上限（不做超频）。"
+          $"允许在 [8, {t.MaxTier}] 内做规格内档位配置（不做超频）。" +
+          "本机 A/B 实测：拉平到 38x 后全核频率无提升，仅增加功耗与温度，不作为性能卖点。"
         : "当前通道读不到 0x1AD：睿频倍率调节已禁用。";
 
     // 供编辑页做基线对比；NaN = MSR 读不到，退回决策值
@@ -218,6 +246,144 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public double FwPl2W => _fwLimits?.Pl2W ?? double.NaN;
     public double FwTauS => _fwLimits?.TauS ?? double.NaN;
     public double FwEpp => _fwEpp;
+
+    // ---- 三层参数模型：L1 固件固化 / L2 智能标定推荐 / L3 用户编辑值 ----
+
+    /// <summary>CPU 能力预筛：型号判断只是提示，最终能力一律以写入自检实测为准。</summary>
+    public ThermalPilot.Core.Taxonomy.CpuCapability CpuCaps { get; }
+
+    /// <summary>0x774 当前实读（固件固化 + 软件重放后的当前生效值）。</summary>
+    public HwpRequestState? FwHwp => _fwHwp;
+    public string FwMinPerfText => _fwHwp?.MinPerf.ToString() ?? "--";
+    public string FwMaxPerfText => _fwHwp?.MaxPerf.ToString() ?? "--";
+    public string FwActivityWindowText => _fwHwp?.ActivityWindow.ToString() ?? "--";
+    public bool HwpEditable => _fwHwp is not null;
+    /// <summary>出厂 Max Perf 上限：Max Perf 不得超过它（规格内调参，不做超频）。</summary>
+    public int FwHwpMaxPerf => _fwHwp?.MaxPerf ?? 0;
+
+    /// <summary>
+    /// 个性化可选微调是否可编辑：0x150 可读 + 型号预筛不排除 + 实机自检未判不可用。
+    /// 型号只是提示；--voltage-probe 明确判 false 时 UI 直接禁用，避免用户白试。
+    /// </summary>
+    public bool VoltageEditable => (_guard?.VoltageReadable ?? false)
+        && CpuCaps.VoltageOffsetPlausible
+        && Settings.VoltageWritable != false;
+    public int AppliedVoltageMv => _appliedVoltageMv;
+    public string VoltageHintText => (Settings.VoltageWritable switch
+    {
+        true => "本机自检：0x150 可写，电压偏移可用。",
+        false => "本机自检：0x150 写入被 BIOS / 微码拒绝，该个性化项已禁用；重跑 --voltage-probe 可复核。",
+        _ => "本机尚未跑 --voltage-probe：写入可能被拒，失败会自动回零。"
+    }) + CpuCaps.VoltageHint +
+        "；写入易失寄存器，重启或退出程序即恢复，属相对安全但可能导致不稳定。";
+    public string CpuCapabilityText => CpuCaps.MatrixText;
+
+    /// <summary>
+    /// 0x774 平台限制说明：本机实测（2026-11-05 --hwp-probe）写入瞬时成功、250ms 后
+    /// 被系统电源策略 / Intel DTT 覆盖回原值。因此 HWP 项可编辑但不保证持续生效，
+    /// L2 智能标定只对 0x610 的 PL1/PL2/Tau 做稳定推荐。
+    /// </summary>
+    public string HwpHintText =>
+        "通用参数提示：0x774 的 EPP / Min-Max Perf / Activity Window 写入瞬时可成功，但部分平台会被" +
+        "Windows 电源计划或 Intel DTT 周期性覆盖（本机实测 250ms 内即被还原）。" +
+        "请在改完后用 --hwp-probe 复核；标定的稳定推荐只覆盖 0x610 的 PL1 / PL2 / Tau。";
+
+    /// <summary>L2 智能标定推荐（只含通用安全参数，不碰电压/睿频/温度墙）。</summary>
+    public string CalibrationLayerText => Settings.Calibration is { } c
+        ? $"标定推荐（L2）：Rth {c.Rth:F2} K/W" +
+          (c.RecommendedPl1W > 0 ? $" · 建议 PL1 {c.RecommendedPl1W:F1}W" : string.Empty) +
+          (c.RecommendedEpp >= 0 ? $" · EPP {c.RecommendedEpp}（0x774 项可能被系统覆盖，仅供参考）" : string.Empty) +
+          $" · 电压上下文 {c.VoltageContextMv} mV · {c.SavedAt:yyyy-MM-dd HH:mm}" +
+          " · 稳定推荐仅覆盖 0x610 的 PL1/PL2/Tau"
+        : "标定推荐（L2）：尚无，完成一次两段式标定后生成（只产出通用安全参数）";
+
+    /// <summary>L3 用户编辑值说明：重新标定只更新 L2，绝不覆盖这里。</summary>
+    public string ManualLayerText => Settings.Manual is not null
+        ? "用户编辑值（L3）已保存；重新标定只更新推荐值，不会覆盖你的手动微调。"
+        : "用户编辑值（L3）：尚无；高级参数页应用后才会保存并开机重放。";
+
+    // ---- 首次安装启动的环境自检：能力快照决定 UI 哪些参数项不可编辑 ----
+
+    private CapabilitySnapshot? _capability;
+    public CapabilitySnapshot? Capability => _capability;
+    public string CapabilitySummaryText => _capability?.Summary ?? "尚未完成环境自检";
+    /// <summary>高级参数页常驻的一行状态；详情一律放诊断页，不在 UI 堆叠说明。</summary>
+    public string CapabilityOneLineText => _capability is { } c
+        ? $"自检 {c.Readable.Count(x => x.Value)}/{c.Readable.Count} 项可获取 · 禁用 {c.DisabledItems.Count} 项" +
+          (c.InstallHints.Count > 0 ? $" · {c.InstallHints.Count} 条依赖提示见诊断页" : string.Empty)
+        : "自检未完成";
+    public string DependencyHintText => _capability?.DependencyText ?? "尚未完成环境自检";
+    public string DisabledItemsText => _capability?.DisabledText ?? "尚未完成环境自检";
+    public string CapabilityReportText => _capability is { } c ? EnvironmentSelfCheck.Report(c) : string.Empty;
+
+    private string TelemetryHint =>
+        $"温度 {(TempAvailable ? "可读" : "不可读")} · 功耗来源 {PowerCaption} · {RaplText}";
+    /// <summary>遥测是否真的采到温度与实测功耗（供环境自检判定可读性）。</summary>
+    public bool TempReadable => _tempAvailable;
+    public bool PowerMeasured => _powerFromDriver;
+    private (bool Temp, bool Power) TelemetryFlags => (TempReadable, PowerMeasured);
+
+    private void InitializeEnvironmentCheck()
+    {
+        try
+        {
+            bool first = !Settings.EnvironmentChecked && !EnvironmentSelfCheck.IsCommandLineMode;
+            // 只读自检：无 UAC、不写任何 MSR，每次启动刷新，保证提权后禁用清单及时解除
+            var f = TelemetryFlags;
+            _capability = EnvironmentSelfCheck.Run(false, TelemetryHint, f.Temp, f.Power);
+            if (first)
+            {
+                Settings.EnvironmentChecked = true;
+                SettingsStore.Save(Settings);
+                int hints = _capability.InstallHints.Count;
+                AddAlert(hints > 0 ? "warn" : "info", "首次环境自检",
+                    (hints > 0
+                        ? $"自检完成，发现 {hints} 条外部依赖 / 环境提示，请到「诊断与日志」或高级参数页查看。"
+                        : "自检完成，外部依赖齐全。") +
+                    $" 能力摘要：{_capability.Summary}；{_capability.DisabledText}");
+            }
+            N(nameof(CapabilitySummaryText)); N(nameof(DependencyHintText));
+            N(nameof(DisabledItemsText)); N(nameof(CapabilityReportText));
+            N(nameof(CapabilityOneLineText));
+        }
+        catch (Exception ex)
+        {
+            AddAlert("warn", "环境自检未完成", ex.Message + "；参数项禁用判断可能不准，可手动重跑 --env-check。");
+        }
+    }
+
+    /// <summary>
+    /// 管理员下的完整自检（含无害写入探测：同值写回 / −10mV 后回零）。
+    /// 界面「重新自检」按钮调用；非管理员返回提示而不是静默失败。
+    /// </summary>
+    public string RunFullEnvironmentCheck()
+    {
+        if (!IsElevated)
+            return "需要管理员权限：请先点「以管理员重启」，再运行完整自检。";
+        try
+        {
+            var f = TelemetryFlags;
+            _capability = EnvironmentSelfCheck.Run(true, TelemetryHint, f.Temp, f.Power);
+            Settings.EnvironmentChecked = true;
+            SettingsStore.Save(Settings);
+            N(nameof(CapabilitySummaryText)); N(nameof(DependencyHintText));
+            N(nameof(DisabledItemsText)); N(nameof(CapabilityReportText));
+            N(nameof(CapabilityOneLineText));
+            AddAlert("info", "环境自检（含写入探测）", _capability.Summary);
+            return _capability.Summary + "；" + _capability.DisabledText;
+        }
+        catch (Exception ex)
+        {
+            return "自检失败：" + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// 固件出厂默认 0x610 基线：MsrGuard 首次启动时备份、永不覆盖。
+    /// 固件值本身不可持久化修改；软件退出或未授权时 CPU 按此默认值运转。
+    /// 用它区分「出厂默认」与「开机重放后的当前生效值」。
+    /// </summary>
+    public RaplLimits? FirmwareDefaults => _guard?.StartupBackup;
 
     /// <summary>直读 MSR 刷新固件实值（只读操作，每拍调用开销可忽略）。</summary>
     private void RefreshFirmwareValues()
@@ -237,9 +403,16 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                     N(nameof(PowerBasisText)); N(nameof(FwDivergeText));
                 }
             }
-            if (guard.Channel.TryRead(0x774, out ulong eppRaw))
+            if (guard.Channel.TryRead(HwpRequest.Msr, out ulong hwpRaw))
             {
-                double epp = (eppRaw >> 24) & 0xFF;   // MSR_HWP_REQUEST [31:24] = EPP
+                var h = HwpRequest.Decode(hwpRaw);
+                if (_fwHwp is null || _fwHwp.Value.Raw != hwpRaw)
+                {
+                    _fwHwp = h;
+                    N(nameof(FwMinPerfText)); N(nameof(FwMaxPerfText));
+                    N(nameof(FwActivityWindowText)); N(nameof(HwpEditable)); N(nameof(FwHwpMaxPerf));
+                }
+                double epp = h.Epp;
                 if (epp != _fwEpp)
                 {
                     _fwEpp = epp;
@@ -321,29 +494,30 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     }
     public string ClockText => _clockGhz <= 0 ? "N/A" : _clockGhz.ToString("F2");
 
-    private double _pl1W = 35.0;
+    // 首拍前不显示硬编码 35W：决策目标尚未产生时用 "--"，InitMsr 成功后由 0x610 实读注入。
+    private double _pl1W = double.NaN;
     public double Pl1W
     {
         get => _pl1W;
         private set { _pl1W = value; N(nameof(Pl1W)); N(nameof(Pl1Text)); N(nameof(FwDivergeText)); }
     }
-    public string Pl1Text => _pl1W.ToString("F1");
+    public string Pl1Text => double.IsNaN(_pl1W) || _pl1W <= 0 ? "--" : _pl1W.ToString("F1");
 
-    private double _pl2W = 44.0;
+    private double _pl2W = double.NaN;
     public double Pl2W
     {
         get => _pl2W;
         private set { _pl2W = value; N(nameof(Pl2W)); N(nameof(Pl2Text)); }
     }
-    public string Pl2Text => _pl2W.ToString("F1");
+    public string Pl2Text => double.IsNaN(_pl2W) || _pl2W <= 0 ? "--" : _pl2W.ToString("F1");
 
-    private double _tauS = 16;
+    private double _tauS = double.NaN;
     public double TauS
     {
         get => _tauS;
         private set { _tauS = value; N(nameof(TauS)); N(nameof(TauText)); }
     }
-    public string TauText => _tauS.ToString("F0");
+    public string TauText => double.IsNaN(_tauS) || _tauS <= 0 ? "--" : _tauS.ToString("F0");
 
     private int _epp = 128;
     public int Epp
@@ -359,7 +533,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         get => _fanPercent;
         private set { _fanPercent = value; N(nameof(FanPercent)); N(nameof(FanText)); }
     }
-    public string FanText => _fanPercent <= 0 ? "N/A" : _fanPercent.ToString("F0");
+    public string FanText => _fanPercent <= 0 ? "--" : _fanPercent.ToString("F0");
 
     private double _rth = double.NaN;
     public double Rth
@@ -654,17 +828,33 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     /// <summary>标定成功后持久化热模型（含轻载基线，供预测与开机重放）。</summary>
     private void SaveCalibrationSnapshot(CalibrationOutcome o)
     {
+        // L2 推荐只包含通用安全参数：稳态热模型反解的 PL1 + 档位 EPP。
+        // 电压偏移 / 睿频倍率 / 温度墙属于个性化或危险项，标定与应用标定一律不碰。
+        double recommendPl1 = Math.Clamp(
+            ThermalCalibration.MaxPowerForCeiling(o.Rth, o.IdleC, o.IdleW, CeilingC),
+            Limits.MinPL1, Limits.MaxPL1);
         Settings.Calibration = new CalibrationSnapshot
         {
             Rth = o.Rth, IdleC = o.IdleC, IdleW = o.IdleW,
             HotC = o.HotC, HotW = o.HotW, BasisW = o.BasisW,
             PredictedC = o.PredictedAtMaxC, Recommended = o.Recommended,
+            RecommendedPl1W = double.IsNaN(recommendPl1) ? 0 : recommendPl1,
+            RecommendedEpp = AutoCpuController.EppForProfile(o.Recommended),
+            VoltageContextMv = _appliedVoltageMv,
             SavedAt = DateTime.Now
         };
         SettingsStore.Save(Settings);
-        N(nameof(CalibrationSummaryText));
-        AddAlert("info", "标定结果已保存",
-            "热阻与轻载基线已写入 settings.json，下次开机自动加载；固件默认值不受影响。");
+        N(nameof(CalibrationSummaryText)); N(nameof(CalibrationLayerText));
+        AddAlert("info", "标定推荐已更新（L2）",
+            "热阻与推荐参数写入 settings.json，下次开机自动加载；固件默认值不受影响。" +
+            "标定只产出通用安全参数（PL1 / PL2 / Tau / EPP），不碰电压偏移、睿频倍率与温度墙。" +
+            "注意：0x774 项（EPP / Min-Max Perf / Activity Window）可能被系统电源策略覆盖，稳定生效的是 0x610 三项。" +
+            (Settings.Manual is not null
+                ? "检测到已有用户编辑值（L3）：本次标定不会覆盖它，是否应用新推荐由你决定。"
+                : "尚无用户编辑值，可在高级参数页应用推荐。") +
+            (_appliedVoltageMv < 0
+                ? $" 注意：当前机器有 {_appliedVoltageMv}mV 电压偏移，热模型已随之改变，推荐值可能不同。"
+                : string.Empty));
     }
 
     private void InitMsr()
@@ -679,12 +869,15 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             {
                 _guard = new MsrGuard(channel, SettingsStore.DataDirectory);
 
-                // 固件实际 PL1：预测稳态时用它做基准，比平台表里的 MaxPL1 更贴机器
+                // 固件实际 PL1：预测稳态时用它做基准，比平台表里的 MaxPL1 更贴机器。
+                // 同时注入决策树首拍基准，避免用硬编码 35W 冒充本机寄存器实值。
                 if (channel.TryReadLimits(out RaplLimits lim) && lim.Pl1W > 0)
                 {
                     _firmwarePl1W = lim.Pl1W;
                     _fwLimits = lim;
-                    N(nameof(PowerBasisText));
+                    _controller.SetCurrentPl1W(lim.Pl1W);
+                    Pl1W = lim.Pl1W; Pl2W = lim.Pl2W; TauS = lim.TauS;
+                    N(nameof(PowerBasisText)); N(nameof(FwPl1Text)); N(nameof(FwPl2Text)); N(nameof(FwTauText));
                 }
 
                 // 睿频倍率表实读（0x1AD），供高级参数页做「当前生效」与出厂上限基线
@@ -708,9 +901,23 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                     AddAlert(r.Ok ? "warn" : "danger", "上次未正常退出（睿频）", r.Message);
                 }
 
+                // 先取 L1 固件实读基线（含 0x774 全字段），再谈重放
+                RefreshFirmwareValues();
+
                 // 开机重放：把软件侧保存的微调参数写回寄存器
                 // 软件不运行 / 未授权时固件保持出厂默认，按电脑默认散热逻辑运转
                 ReplayPersistedTuning();
+
+                // 重放可能已改写 0x610：再读一次「当前生效」值作为决策起点与首帧显示值。
+                // 这样界面不会拿固件默认 45W 或硬编码 35W 冒充已重放的软件微调值。
+                if (channel.TryReadLimits(out RaplLimits effective) && effective.Pl1W > 0)
+                {
+                    _fwLimits = effective;
+                    _controller.SetCurrentPl1W(effective.Pl1W);
+                    Pl1W = effective.Pl1W; Pl2W = effective.Pl2W; TauS = effective.TauS;
+                    N(nameof(FwPl1Text)); N(nameof(FwPl2Text)); N(nameof(FwTauText));
+                    N(nameof(FwDivergeText)); N(nameof(FwDefaultText));
+                }
             }
             else
             {
@@ -726,6 +933,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         N(nameof(MsrStatusText));
         N(nameof(MsrDetail));
         N(nameof(MsrSummary));
+        // 重放可能改写了 0x610 / 0x774，最后再刷一遍「当前生效」列
+        RefreshFirmwareValues();
+        N(nameof(CalibrationLayerText)); N(nameof(ManualLayerText));
     }
 
     /// <summary>
@@ -769,6 +979,23 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             AddAlert(er.Ok ? "info" : "warn", er.Ok ? "EPP 已重放" : "EPP 重放未生效", er.Message);
         }
 
+        // L3 通用 HWP 扩展字段：-1 表示用户未编辑该项，保持原值、不重放。
+        // 智能标定（L2）永远不写这些字段，只有用户编辑过的 L3 值才会开机重放。
+        if (r.Ok && (m.MinPerf >= 0 || m.MaxPerf >= 0 || m.ActivityWindow >= 0))
+        {
+            var hr = _guard.ApplyHwp(m.MinPerf, m.MaxPerf, -1, m.ActivityWindow, FwHwpMaxPerf);
+            AddAlert(hr.Ok ? "info" : "warn", hr.Ok ? "HWP 通用参数已重放" : "HWP 重放未生效", hr.Message);
+        }
+
+        // L3 个性化电压偏移：只在用户显式保存过降压值时重放；失败不影响其它参数。
+        // 该寄存器易失，重启/退出即回零，属于「相对安全」但需要型号预筛与二次确认的可选微调。
+        if (m.VoltageOffsetMv < 0 && _guard.VoltageReadable && CpuCaps.VoltageOffsetPlausible)
+        {
+            var vr = _guard.ApplyVoltage(m.VoltageOffsetMv);
+            if (vr.Ok) _appliedVoltageMv = m.VoltageOffsetMv;
+            AddAlert(vr.Ok ? "warn" : "info", vr.Ok ? "电压偏移已重放" : "电压偏移未生效", vr.Message);
+        }
+
         // 睿频倍率表独立于 0x610：即使功耗参数重放失败，也尝试恢复用户保存的倍率
         if (m.TurboRatio > 0)
         {
@@ -778,33 +1005,44 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>应用成功后保存手动微调值（只有真实写入成功才落盘）。</summary>
+    /// <summary>
+    /// L3：应用成功后才保存用户编辑值（只有真实写入成功才落盘）。
+    /// 新增的扩展项都带默认值，旧调用点无需改动；-1 = 该项未编辑、不重放。
+    /// </summary>
     public void SaveManualTuning(double pl1, double pl2, double tau, int epp,
-        bool writeTimeWindow, int turboRatio = 0)
+        bool writeTimeWindow, int turboRatio = 0,
+        int minPerf = -1, int maxPerf = -1, int activityWindow = -1, int voltageOffsetMv = 0)
     {
         Settings.Manual = new ManualTuning
         {
             Pl1W = pl1, Pl2W = pl2, TauS = tau, Epp = epp,
-            WriteTimeWindow = writeTimeWindow, TurboRatio = turboRatio, SavedAt = DateTime.Now
+            WriteTimeWindow = writeTimeWindow, TurboRatio = turboRatio,
+            MinPerf = minPerf, MaxPerf = maxPerf,
+            ActivityWindow = activityWindow, VoltageOffsetMv = voltageOffsetMv,
+            SavedAt = DateTime.Now
         };
         // 手动微调优先：关掉自动接管，避免决策树每拍把用户保存的值覆盖掉
         _manualLock = true;
         Settings.AutoTakeover = false;
         SettingsStore.Save(Settings);
-        N(nameof(SavedTuningText));
-        AddAlert("info", "微调参数已保存",
+        N(nameof(SavedTuningText)); N(nameof(ManualLayerText));
+        AddAlert("info", "微调参数已保存（L3）",
             $"PL1 {pl1:F1}W / PL2 {pl2:F1}W / Tau {tau:F0}s" +
             (epp >= 0 ? $" / EPP {epp}" : "（EPP 本机不可读，未保存）") +
-            (turboRatio > 0 ? $" / 睿频 {turboRatio}x（{turboRatio / 10.0:F1}GHz）" : "（睿频未调节）") +
-            " 已写入 settings.json；下次开机（管理员 + 写入授权）自动重放到寄存器。自动接管已关闭，决策树不会覆盖手动值。");
+            (maxPerf >= 0 ? $" / MaxPerf {maxPerf}" : string.Empty) +
+            (voltageOffsetMv < 0 ? $" / 电压 {voltageOffsetMv}mV（个性化项，需二次确认）" : string.Empty) +
+            " 已写入 settings.json；下次开机自动重放到寄存器。自动接管已关闭。" +
+            "重新标定只更新 L2 推荐值，不会覆盖本次编辑。");
     }
 
     public string SavedTuningText => Settings.Manual is { } m
-        ? $"已保存的软件侧优化值：PL1 {m.Pl1W:F1}W · PL2 {m.Pl2W:F1}W · Tau {m.TauS:F0}s · " +
-          (m.Epp >= 0 ? $"EPP {m.Epp}" : "EPP 未保存") + " · " +
+        ? $"已保存的用户编辑值（L3）：PL1 {m.Pl1W:F1}W · PL2 {m.Pl2W:F1}W · Tau {m.TauS:F0}s · " +
+          (m.Epp >= 0 ? $"EPP {m.Epp}" : "EPP 未保存") +
+          (m.MaxPerf >= 0 ? $" · MaxPerf {m.MaxPerf}" : string.Empty) +
+          (m.VoltageOffsetMv < 0 ? $" · 电压 {m.VoltageOffsetMv}mV" : string.Empty) + " · " +
           (m.TurboRatio > 0 ? $"睿频 {m.TurboRatio}x" : "睿频未调节") +
           $"（{m.SavedAt:yyyy-MM-dd HH:mm}）"
-        : "无已保存的微调参数（CPU 按固件默认值运转）";
+        : "无已保存的用户编辑值（CPU 按固件默认值运转）";
 
     public void ClearManualTuning()
     {
@@ -870,6 +1108,45 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     }
 
     /// <summary>
+    /// 通用 HWP 参数（L2 标定可推荐 / L3 用户可编辑）：Min/Max Perf、EPP、Activity Window。
+    /// -1 = 保持原值。绝不写 Desired Perf / Package Control。
+    /// </summary>
+    public MsrWriteResult ApplyHwpIfSupported(int minPerf = -1, int maxPerf = -1,
+        int epp = -1, int activityWindow = -1)
+    {
+        if (_guard is null || !_guard.EppSupported)
+            return new MsrWriteResult(MsrWriteOutcome.Rejected, "0x774 不可读，HWP 参数微调不可用");
+        if (!Settings.AllowRealWrite)
+            return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」");
+
+        var r = _guard.ApplyHwp(minPerf, maxPerf, epp, activityWindow, FwHwpMaxPerf);
+        RefreshFirmwareValues();
+        AddAlert(r.Ok ? "info" : "warn", r.Ok ? "HWP 参数已写入" : "HWP 写入未生效", r.Message);
+        return r;
+    }
+
+    /// <summary>
+    /// 个性化可选微调（仅 L3 用户手动）：Core/Cache 电压偏移。
+    /// 需型号预筛通过 + 0x150 可读；真正可写性由写入自检实测，失败强制回零。
+    /// </summary>
+    public MsrWriteResult ApplyVoltageIfSupported(int offsetMv)
+    {
+        if (_guard is null || !_guard.VoltageReadable)
+            return new MsrWriteResult(MsrWriteOutcome.Rejected, "0x150 不可读，电压偏移不可用");
+        if (!CpuCaps.VoltageOffsetPlausible)
+            return new MsrWriteResult(MsrWriteOutcome.Rejected, CpuCaps.VoltageHint);
+        if (!Settings.AllowRealWrite)
+            return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」");
+
+        var r = _guard.ApplyVoltage(offsetMv);
+        if (r.Ok) _appliedVoltageMv = offsetMv;
+        else { _appliedVoltageMv = 0; _guard.RestoreVoltage(); }
+        N(nameof(AppliedVoltageMv));
+        AddAlert(r.Ok ? "warn" : "info", r.Ok ? "电压偏移已下发" : "电压偏移未生效", r.Message);
+        return r;
+    }
+
+    /// <summary>
     /// 写入睿频倍率上限（0x1AD）。ratio 为 ×100MHz，必须 ≤ 出厂单核上限；
     /// 机型不支持或超出范围时返回说明，不影响 PL1/PL2/Tau 的写入结果。
     /// </summary>
@@ -913,8 +1190,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         var result = _guard.Restore();
         var epp = _guard.RestoreEpp();
         var turbo = _guard.RestoreTurbo();
+        var voltage = _guard.RestoreVoltage();
+        _appliedVoltageMv = 0;
+        N(nameof(AppliedVoltageMv));
         if (epp.Ok) result = result with { Message = result.Message + "；EPP 已恢复固件默认值" };
         if (turbo.Ok) result = result with { Message = result.Message + "；睿频倍率表已恢复固件默认" };
+        if (voltage.Ok) result = result with { Message = result.Message + "；电压偏移已回零" };
         AddAlert(result.Ok ? "info" : "danger",
             result.Ok ? "已恢复原值" : "恢复失败", result.Message);
         return result;
@@ -993,16 +1274,37 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
     public void SetStress(bool on) => SetStress(on, Math.Max(2, System.Environment.ProcessorCount - 2));
 
-    /// <summary>压测负载开关；threads 可指定线程数（低负载对照用）。</summary>
-    public void SetStress(bool on, int threads)
+    /// <summary>兼容旧入口：只指定线程数，使用标量浮点内核。</summary>
+    public void SetStress(bool on, int threads) => SetStress(on, threads, StressKernel.ScalarFloat, 1.0);
+
+    /// <summary>按标准场景对象施加负载（场景库生成的线程数 / 内核 / 占空比）。</summary>
+    public void SetStress(bool on, StressScenario scenario)
+        => SetStress(on, Math.Max(1, scenario.Threads), scenario.Kernel, scenario.DutyCycle);
+
+    /// <summary>当前压测场景描述，供界面与报告显示。</summary>
+    public string StressScenarioText => StressActive
+        ? $"{_stressKernel} · {_stressThreads} 线程 · {_stressDuty * 100:F0}%"
+        : "未施加";
+
+    /// <summary>
+    /// 压测负载开关：可指定线程数、负载内核与占空比。
+    /// 场景切换时重建负载；参数完全相同的重复调用直接复用，避免每拍重建线程。
+    /// </summary>
+    public void SetStress(bool on, int threads, StressKernel kernel, double dutyCycle = 1.0)
     {
         int n = Math.Max(1, threads);
-        if (on && StressActive && _stressThreads == n) return;
+        double duty = double.IsNaN(dutyCycle) ? 1.0 : Math.Clamp(dutyCycle, 0.05, 1.0);
+        if (on && StressActive && _stressThreads == n && _stressKernel == kernel &&
+            Math.Abs(_stressDuty - duty) < 0.01) return;
+
         _stress?.Dispose();
         _stress = null;
         _stressThreads = on ? n : -1;
-        if (on) _stress = new StressLoad(_stressThreads);
+        _stressKernel = kernel;
+        _stressDuty = duty;
+        if (on) _stress = new StressLoad(n, kernel, duty);
         StressActive = on;
+        N(nameof(StressScenarioText));
     }
 
     /// <summary>
@@ -1070,8 +1372,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                     _calPhase = CalPhase.Ramp;
                     _calPhaseTicks = 0;
                     _calRecentTemps.Clear();
-                    SetStress(true);
-                    AddAlert("info", "进入满载段", "已记录轻载基线，开始拉满核心，等待温度平台。");
+                    // 标定满载段用可达功耗最高的场景（全逻辑核 + SIMD/FMA），
+                    // 让 ΔP 足够大、温度平台更快到达、热阻拟合更可信；
+                    // 其余负载内核由 --scenario-sweep 的场景阶梯覆盖。
+                    SetStress(true, Math.Max(2, Environment.LogicalCores), StressKernel.SimdFma);
+                    AddAlert("info", "进入满载段",
+                        "已记录轻载基线，改用全核 SIMD/FMA 高功耗场景拉满核心，等待温度平台。");
                 }
                 break;
 

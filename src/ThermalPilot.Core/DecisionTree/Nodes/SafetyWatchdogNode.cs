@@ -29,7 +29,7 @@ public class SafetyWatchdogNode : IDecisionNode
                 TargetPL2W = safePL1 * profile.Pl2Ratio,
                 TargetTauS = profile.TauSeconds,
                 TargetEpp = Math.Max(profile.Epp, 128),
-                TargetFanPercent = 100.0, // 强制全速散热
+                TargetFanPercent = 100.0, // 演算建议值，不落硬件；实际转速由 EC 自调
                 Direction = -1,
                 ForceImmediateApply = true
             };
@@ -37,7 +37,7 @@ public class SafetyWatchdogNode : IDecisionNode
             var receipt = new DecisionReceipt
             {
                 TriggeredRuleName = NodeName,
-                CausalReason = $"[硬件安全熔断] 检测到 PROCHOT 告警({snapshot.IsProchotActive}) 或 温度 ({snapshot.CurrentTempC:F1}°C) 逼近 TjMax 临界红线，执行紧急下调功耗至 {safePL1:F1}W 并拉满风扇",
+                CausalReason = $"[硬件安全熔断] 检测到 PROCHOT 告警({snapshot.IsProchotActive}) 或 温度 ({snapshot.CurrentTempC:F1}°C) 逼近 TjMax 临界红线，执行紧急下调功耗至 {safePL1:F1}W（风扇建议 100% 仅演算、未下发，转速由 EC 自调）",
                 ActiveLimit = BindingLimit.ThermalLimit,
                 Action = action,
                 EvaluatedPath = auditPath.ToArray()

@@ -53,9 +53,9 @@
 
 | # | 节点 | 判定条件 | 动作 |
 | :--- | :--- | :--- | :--- |
-| 1 | `SafetyWatchdog` | PROCHOT 触发 或 温度 ≥ TjMax−3°C | 紧急降功耗，风扇推满，立即生效 |
+| 1 | `SafetyWatchdog` | PROCHOT 触发 或 温度 ≥ TjMax−3°C | 紧急降功耗；风扇 100% 仅为演算建议值（未下发，EC 自调），立即生效 |
 | 2 | `LightLoadFilter` | 负载 < 阈值 或 包功耗 < 阈值 | **锚定固件实读 PL1**（`FirmwarePL1W`），不是保持上一拍决策值 |
-| 3 | `CeilingExceeded` | 温度 > 用户温度天花板 | 阶梯降功耗，风扇推至上限 |
+| 3 | `CeilingExceeded` | 温度 > 用户温度天花板 | 阶梯降功耗；风扇目标仅为演算建议值（未下发，EC 自调） |
 | 4 | `ThermalPredictive` | 准稳态下预测升功耗后稳态温度将超标 | 提前锁定当前功耗，杜绝过冲震荡 |
 | 5 | `BottleneckArbiter` | 安全且未超温 | 功耗墙有余量 → 升功耗；已达睿频上限 → 维持节能；死区内 → 维持现状 |
 
@@ -164,7 +164,8 @@ ThermalPilot.Monitor.exe --diag
 | `--write-test` | **写入→回读→恢复闭环**（通道验收第一命令） | 同值写回 + 恢复 |
 | `--calibrate-test` | 两段式稳态热阻标定自检 | 临时写入 + 恢复 |
 | `--calibrate-sweep --seconds 25 --ceiling 85` | 多档 PL1 阶梯标定，拟合 T(P) 并反解推荐值 | 临时写入 + 恢复 |
-| `--stress-test --seconds 40 --low-pl1 15` | A/B/C 满载压测：固件默认 / 降墙 / 放宽 | 临时写入 + 恢复 |
+| `--scenario-sweep --seconds 12 --target-ratio 0.9` | 场景化功耗覆盖扫描：12 个负载场景 × 实读 PL1 覆盖率 | 否（只读压测） |
+| `--stress-test --seconds 40 --low-pl1 15 --kernel SimdFma` | A/B/C 满载压测：固件默认 / 降墙 / 放宽；可指定负载内核 | 临时写入 + 恢复 |
 | `--turbo-probe` | 0x1AD 档位、锁位、38x 写入→回读→恢复 | 临时写入 + 恢复 |
 | `--turbo-stress --seconds 30` | 睿频 A/B 满载实测 + HWP/PROCHOT 诊断 | 临时写入 + 恢复 |
 

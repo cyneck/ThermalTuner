@@ -5,6 +5,7 @@ using System.Text;
 using ThermalPilot.App.Services;
 using ThermalPilot.App.Services.Msr;
 using ThermalPilot.Core.Environment;
+using ThermalPilot.Core.Stress;
 
 namespace ThermalPilot.App;
 
@@ -140,10 +141,14 @@ internal static class CalibrationSweepProbe
                 if (b > 0.05)
                 {
                     double pMax = (ceiling - a) / b;
-                    double recommended = Math.Clamp(Math.Round(pMax * 8) / 8.0, 8, fwPl1);
+                    // 推荐值按硬件合法区间钳制，不拿固件默认值当上限：
+                    // 实测标定优于出厂默认是正常优化，固件值本身仍不可持久化修改。
+                    double recommended = Math.Clamp(Math.Round(pMax * 8) / 8.0,
+                        session.Limits.MinPL1, session.Limits.MaxPL1);
                     sb.AppendLine($"反解 {F(ceiling, 0)}°C 上限    : 可持续包功耗 ≤ {F(pMax, 1)}W");
                     sb.AppendLine($"推荐 PL1           : {F(recommended, 1)}W（固件默认 {F(fwPl1, 1)}W，" +
-                                  $"{(recommended < fwPl1 ? "低于" : "不低于")}默认值）");
+                                  $"{(recommended < fwPl1 ? "低于" : recommended > fwPl1 ? "高于" : "等于")}默认值；" +
+                                  "高于默认值属正常优化，不是拟合误差）");
                     sb.AppendLine("推荐值用法         : 在「高级参数」页填入 PL1 并点应用，软件会写入 0x610 并持久化；");
                     sb.AppendLine("                     固件默认值不变，软件不运行时 CPU 按固件默认散热逻辑运转。");
                 }
@@ -204,7 +209,8 @@ internal static class CalibrationSweepProbe
     private static void RunStage(SessionState session, List<Row> rows,
         string stage, bool load, double targetPl1, int seconds, int threads)
     {
-        session.SetStress(load, threads);
+        // 阶梯标定统一用可达功耗最高的场景，让各档 ΔP 真正拉开、拟合更可信
+        session.SetStress(load, threads, StressKernel.SimdFma);
         var sw = Stopwatch.StartNew();
         int interval = Math.Max(250, session.Settings.IntervalMs);
         while (sw.Elapsed.TotalSeconds < seconds)

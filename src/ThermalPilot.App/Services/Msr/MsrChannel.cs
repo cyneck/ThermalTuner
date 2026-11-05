@@ -54,7 +54,18 @@ public sealed class MsrChannel : IDisposable
     public bool CanWrite => Status == MsrStatus.Writable;
 
     /// <summary>后端名称（诊断报告用）。</summary>
-    public static string BackendName => "LHM 0.9.4 / WinRing0 (Ring0.WriteMsr)";
+    /// <summary>运行时探测的后端名：不再把 0.9.4 写死，环境自检据此判断真实后端能力。</summary>
+    public static string BackendName
+    {
+        get
+        {
+            string v = typeof(Computer).Assembly.GetName().Version?.ToString() ?? "未知";
+            EnsureProbed();
+            return _writeMsr is not null
+                ? $"LHM {v} / WinRing0 (Ring0.WriteMsr)"
+                : $"LHM {v} / 只读后端（无 Ring0.WriteMsr）";
+        }
+    }
 
     /// <summary>运行期发现不可写（如驱动拒绝）时自我降级，UI 据此隐藏写入入口。</summary>
     public void MarkNotWritable(string reason)

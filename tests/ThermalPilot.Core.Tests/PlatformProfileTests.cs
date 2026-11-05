@@ -115,9 +115,14 @@ public class PlatformProfileTests
         var vm = HardwareLimitResolver.Resolve(
             Env(CpuVendor.Intel, 7, "HQ", CpuFormFactor.MobilePerformance, vm: true));
 
-        Check.True(vm.MaxPL1 <= 45.0, $"虚拟化环境 PL1 上界应压到 ≤45W（实际 {vm.MaxPL1}）");
-        Check.True(vm.MaxPL2 <= 65.0, $"虚拟化环境 PL2 上界应压到 ≤65W（实际 {vm.MaxPL2}）");
+        // 虚拟化收紧是通用比例规则，不能绑定某台机器的 45W / 65W
+        Check.True(vm.MaxPL1 < bare.MaxPL1,
+            $"虚拟化环境 PL1 上界必须比裸机更紧（裸机 {bare.MaxPL1}，虚拟化 {vm.MaxPL1}）");
+        Check.True(vm.MaxPL2 < bare.MaxPL2,
+            $"虚拟化环境 PL2 上界必须比裸机更紧（裸机 {bare.MaxPL2}，虚拟化 {vm.MaxPL2}）");
         Check.True(vm.MaxPL1 <= bare.MaxPL1, "虚拟化约束不得比裸机更宽");
+        Check.True(vm.MinPL1 < vm.MaxPL1 && vm.MaxPL1 < vm.MaxPL2,
+            "收紧后仍须保持 MinPL1 < MaxPL1 < MaxPL2 物理不变式");
     }
 
     private void Test_Resolver_UnknownFallsBack()

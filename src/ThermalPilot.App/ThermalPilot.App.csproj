@@ -33,4 +33,11 @@
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>
 
+  <!-- v0.4.2 误升级 0.9.6+ 时留下的 PawnIO 适配，零调用点、只读、未启用。
+       运行时只用 LHM 0.9.4 / WinRing0；保留文件作历史参考，不参与编译。 -->
+  <ItemGroup>
+    <Compile Remove="Services/Msr/PawnIoNative.cs" />
+    <Compile Remove="Services/Msr/LhmPawnModule.cs" />
+  </ItemGroup>
+
 </Project>
