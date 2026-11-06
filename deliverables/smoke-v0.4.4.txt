@@ -1,0 +1,41 @@
+﻿== 环境 ==
+CPU          : Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz
+平台         : Intel Gen 7 / 高性能移动
+核心         : 8P / 8L
+温度/功耗    : TjMax 100°C · 安全上限 95°C · PL1 [15–65W] · PL2 [20–90W]
+驱动/权限    : 驱动就绪 / 普通用户
+传感器       : 25
+功耗计量     : 未接入（MSR 通道不可用）
+标定持久化   : 已保存标定：Rth 0.93 K/W · 2026-11-06 19:53（开机自动加载，无需重测）
+微调持久化   : 已保存的用户编辑值（L3）：PL1 45.0W · PL2 56.2W · Tau 32s · EPP 60 · MaxPerf 36 · 睿频未调节（2026-11-06 19:06）
+开机重放     : True（允许实写 True）
+档位/天花板  : 均衡（balanced）/ 88°C
+档位持久化   : settings.json = balanced → 已正确恢复
+自动写入闸门 : MSR 通道不可写（权限/驱动）：只演算
+
+== 主循环（3 拍）==
+  拍1: T=62.9°C load=70% P=19W 来源=WMI Rth=0.93(稳态标定值) PL1=43.0W 规则=BottleneckArbiter
+  拍2: T=63.9°C load=81% P=21W 来源=WMI Rth=0.93(稳态标定值) PL1=46.0W 规则=BottleneckArbiter
+  拍3: T=63.9°C load=41% P=13W 来源=WMI Rth=0.93(稳态标定值) PL1=49.0W 规则=BottleneckArbiter
+可否标定     : False（缺少实测功耗：普通权限读不到 MSR，请点「以管理员重启」后标定）
+
+== 热模型 / 固件锚点 ==
+最高核频     : N/A GHz
+固件默认     : 固件出厂默认：--（启动时备份不可读）
+当前生效     : PL1 --W · PL2 --W · Tau -- · EPP --
+EPP 可编辑   : False
+预测稳态     : 84.6°C（按 49W 外推）
+预测基线     : 轻载基线 44.3°C @ 5.7W
+标定前馈     : 标定前馈已生效：决策 PL1 上限 53W（天花板 88°C）
+分歧说明     : 固件实值不可读，当前生效列显示 --。
+
+== 页面 ==
+OK    概览  (desired 1190x637)
+OK    智能调优  (desired 1195x639)
+OK    实时监控  (desired 644x582)
+OK    高级参数  (desired 1196x650)
+OK    诊断与日志  (desired 894x820)
+OK    设置  (desired 1177x612)
+OK    MainWindow
+
+RESULT: PASS

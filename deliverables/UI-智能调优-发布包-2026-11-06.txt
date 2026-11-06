@@ -1,0 +1,9 @@
+﻿页面      : tuning
+尺寸      : 1306x803
+CPU       : Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz
+CPU 使用率: 22%
+GPU 使用率: 0%
+GPU 显存  : 2%
+风扇      : N/A（本机 EC 未暴露）
+温度/功耗 : 61.0°C / 19W（LHM）
+RESULT: PASS

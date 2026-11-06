@@ -1,0 +1,9 @@
+﻿页面      : overview
+尺寸      : 1306x803
+CPU       : Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz
+CPU 使用率: 10%
+GPU 使用率: 0%
+GPU 显存  : 2%
+风扇      : N/A（本机 EC 未暴露）
+温度/功耗 : 49.0°C / 10W（LHM）
+RESULT: PASS

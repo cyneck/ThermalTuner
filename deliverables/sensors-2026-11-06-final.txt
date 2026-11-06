@@ -1,0 +1,124 @@
+﻿== LHM 全硬件传感器清单（只读）==
+
+[Motherboard] HP 838F
+
+[Cpu] Intel Core i7-7700HQ
+  Load           | CPU Core #1 Thread #1              | 38.1 | /intelcpu/0/load/2
+  Load           | CPU Core #1 Thread #2              | 30.7 | /intelcpu/0/load/3
+  Load           | CPU Core #2 Thread #1              | 30.6 | /intelcpu/0/load/4
+  Load           | CPU Core #2 Thread #2              | 24.8 | /intelcpu/0/load/5
+  Load           | CPU Core #3 Thread #1              | 32.7 | /intelcpu/0/load/6
+  Load           | CPU Core #3 Thread #2              | 38.4 | /intelcpu/0/load/7
+  Load           | CPU Core #4 Thread #1              | 30.3 | /intelcpu/0/load/8
+  Load           | CPU Core #4 Thread #2              | 29.8 | /intelcpu/0/load/9
+  Load           | CPU Total                          | 31.9 | /intelcpu/0/load/0
+  Load           | CPU Core Max                       | 38.4 | /intelcpu/0/load/1
+  Temperature    | Core Max                           | 62.0 | /intelcpu/0/temperature/0
+  Temperature    | Core Average                       | 57.0 | /intelcpu/0/temperature/1
+  Temperature    | CPU Core #1                        | 62.0 | /intelcpu/0/temperature/2
+  Temperature    | CPU Core #2                        | 52.0 | /intelcpu/0/temperature/3
+  Temperature    | CPU Core #3                        | 52.0 | /intelcpu/0/temperature/4
+  Temperature    | CPU Core #4                        | 62.0 | /intelcpu/0/temperature/5
+  Temperature    | CPU Package                        | 62.0 | /intelcpu/0/temperature/6
+  Temperature    | CPU Core #1 Distance to TjMax      | 38.0 | /intelcpu/0/temperature/7
+  Temperature    | CPU Core #2 Distance to TjMax      | 48.0 | /intelcpu/0/temperature/8
+  Temperature    | CPU Core #3 Distance to TjMax      | 48.0 | /intelcpu/0/temperature/9
+  Temperature    | CPU Core #4 Distance to TjMax      | 38.0 | /intelcpu/0/temperature/10
+  Clock          | CPU Core #1                        | 3409.7 | /intelcpu/0/clock/1
+  Clock          | CPU Core #2                        | 3409.7 | /intelcpu/0/clock/2
+  Clock          | CPU Core #3                        | 3409.7 | /intelcpu/0/clock/3
+  Clock          | CPU Core #4                        | 3610.3 | /intelcpu/0/clock/4
+  Power          | CPU Package                        | 23.1 | /intelcpu/0/power/0
+  Power          | CPU Cores                          | 18.2 | /intelcpu/0/power/1
+  Power          | CPU Memory                         | 0.9 | /intelcpu/0/power/3
+  Power          | CPU Platform                       | 0.0 | /intelcpu/0/power/4
+  Voltage        | CPU Core                           | 1.1 | /intelcpu/0/voltage/0
+  Voltage        | CPU Core #1                        | 1.1 | /intelcpu/0/voltage/1
+  Voltage        | CPU Core #2                        | 1.1 | /intelcpu/0/voltage/2
+  Voltage        | CPU Core #3                        | 1.1 | /intelcpu/0/voltage/3
+  Voltage        | CPU Core #4                        | 1.1 | /intelcpu/0/voltage/4
+  Clock          | Bus Speed                          | 100.3 | /intelcpu/0/clock/0
+
+[Memory] Generic Memory
+  Data           | Memory Used                        | 9.3 | /ram/data/0
+  Data           | Memory Available                   | 6.5 | /ram/data/1
+  Load           | Memory                             | 58.9 | /ram/load/0
+  Data           | Virtual Memory Used                | 12.5 | /ram/data/2
+  Data           | Virtual Memory Available           | 5.7 | /ram/data/3
+  Load           | Virtual Memory                     | 68.7 | /ram/load/1
+
+[GpuNvidia] NVIDIA GeForce GTX 1050 Ti
+  Temperature    | GPU Core                           | 43.0 | /gpu-nvidia/0/temperature/0
+  Clock          | GPU Core                           | 139.0 | /gpu-nvidia/0/clock/0
+  Clock          | GPU Memory                         | 405.0 | /gpu-nvidia/0/clock/4
+  Load           | GPU Core                           | 0.0 | /gpu-nvidia/0/load/0
+  Load           | GPU Memory Controller              | 0.0 | /gpu-nvidia/0/load/1
+  Load           | GPU Video Engine                   | 0.0 | /gpu-nvidia/0/load/2
+  Load           | GPU Bus                            | 0.0 | /gpu-nvidia/0/load/3
+  SmallData      | D3D Dedicated Memory Used          | 4.0 | /gpu-nvidia/0/smalldata/3
+  SmallData      | D3D Shared Memory Used             | 1.3 | /gpu-nvidia/0/smalldata/4
+  Load           | D3D 3D                             | 0.0 | /gpu-nvidia/0/load/5
+  Load           | D3D Compute_0                      | 0.0 | /gpu-nvidia/0/load/6
+  Load           | D3D Overlay                        | 0.0 | /gpu-nvidia/0/load/16
+  Load           | D3D Video Decode                   | 0.0 | /gpu-nvidia/0/load/18
+  Load           | D3D Security                       | 0.0 | /gpu-nvidia/0/load/17
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/8
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/9
+  Load           | D3D Video Encode                   | 0.0 | /gpu-nvidia/0/load/19
+  Load           | D3D Graphics_1                     | 0.0 | /gpu-nvidia/0/load/15
+  Load           | D3D Cuda                           | 0.0 | /gpu-nvidia/0/load/14
+  Load           | D3D Compute_1                      | 0.0 | /gpu-nvidia/0/load/7
+  Load           | D3D VR                             | 0.0 | /gpu-nvidia/0/load/20
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/10
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/11
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/12
+  Load           | D3D Copy                           | 0.0 | /gpu-nvidia/0/load/13
+  Temperature    | GPU Hot Spot                       | 51.9 | /gpu-nvidia/0/temperature/2
+  SmallData      | GPU Memory Total                   | 4096.0 | /gpu-nvidia/0/smalldata/2
+  SmallData      | GPU Memory Free                    | 4018.0 | /gpu-nvidia/0/smalldata/0
+  SmallData      | GPU Memory Used                    | 78.0 | /gpu-nvidia/0/smalldata/1
+  Load           | GPU Memory                         | 1.9 | /gpu-nvidia/0/load/3
+  Throughput     | GPU PCIe Rx                        | 0.0 | /gpu-nvidia/0/throughput/0
+  Throughput     | GPU PCIe Tx                        | 0.0 | /gpu-nvidia/0/throughput/1
+
+[GpuIntel] Intel(R) HD Graphics 630
+  Power          | GPU Power                          | 0.1 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/power/0
+  SmallData      | D3D Shared Memory Total            | 8131.5 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/smalldata/2
+  SmallData      | D3D Shared Memory Free             | null | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/smalldata/1
+  SmallData      | D3D Shared Memory Used             | 251.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/smalldata/0
+  Load           | D3D 3D                             | 7.8 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/0
+  Load           | D3D Video Decode                   | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/9
+  Load           | D3D Copy                           | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/1
+  Load           | D3D Video Processing               | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/11
+  Load           | D3D Video Decode                   | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/10
+  Load           | D3D Other                          | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/3
+  Load           | D3D Other                          | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/4
+  Load           | D3D Other                          | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/5
+  Load           | D3D Other                          | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/6
+  Load           | D3D Overlay                        | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/8
+  Load           | D3D GDI Render                     | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/2
+  Load           | D3D Video Processing               | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/12
+  Load           | D3D Other                          | 0.0 | /gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_591B%26SUBSYS_838F103C%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D/load/7
+
+[Battery] Primary 
+  Energy         | Designed Capacity                  | 69485.0 | /battery/Primary%00_11/energy/0
+  Energy         | Fully-Charged Capacity             | 69485.0 | /battery/Primary%00_11/energy/1
+  Level          | Degradation Level                  | 0.0 | /battery/Primary%00_11/level/1
+  Energy         | Remaining Capacity                 | 67021.0 | /battery/Primary%00_11/energy/2
+  Level          | Charge Level                       | 96.5 | /battery/Primary%00_11/level/0
+  Voltage        | Voltage                            | 17.1 | /battery/Primary%00_11/voltage/0
+  Current        | Charge/Discharge Current           | 0.0 | /battery/Primary%00_11/current/0
+  Power          | Charge/Discharge Rate              | 0.0 | /battery/Primary%00_11/power/0
+
+硬件 6 个 · 传感器 98 个
+RESULT: 传感器枚举完成
+
+== 聚合指标（HardwareTelemetry.Read 一拍）==
+CPU 使用率     : 35.7%
+GPU            : NVIDIA GeForce GTX 1050 Ti / LHM GPU
+GPU 使用率     : 0.0%
+GPU 显存占用率 : 1.9%
+GPU 显存用量   : 78 / 4096 MB
+风扇 RPM       : N/A
+风扇控制 %     : N/A
+功耗来源       : LHM · 25.4 W

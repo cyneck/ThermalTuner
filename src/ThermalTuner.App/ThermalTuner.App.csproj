@@ -10,6 +10,8 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>ThermalTuner.App</RootNamespace>
     <AssemblyName>ThermalTuner.App</AssemblyName>
+    <!-- 统一版本口径：与 README、侧栏版本号一致 -->
+    <Version>0.4.4</Version>
     <!-- 可执行文件的运行图标（任务栏 / 资源管理器），同时作为窗口与托盘图标来源 -->
     <ApplicationIcon>Assets\ThermalTuner.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>

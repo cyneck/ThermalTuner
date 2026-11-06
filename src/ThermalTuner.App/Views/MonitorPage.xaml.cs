@@ -61,7 +61,7 @@ public partial class MonitorPage : UserControl
         {
             Title = "导出采样数据",
             Filter = "CSV 文件|*.csv",
-            FileName = $"thermalpilot-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
+            FileName = $"thermaltuner-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
         };
         if (dlg.ShowDialog() != true) return;
 

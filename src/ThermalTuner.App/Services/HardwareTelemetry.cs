@@ -12,7 +12,19 @@ public readonly record struct TelemetrySample(
     double PowerW,
     double MaxCoreGhz,
     bool PowerMeasured,
-    string Source);
+    string Source,
+    // 监控面板扩展指标。NaN = 本机不可读；UI 必须显示 N/A，不得用演算值冒充实测。
+    double GpuLoadPercent = double.NaN,
+    double GpuMemoryPercent = double.NaN,
+    double GpuMemoryUsedMb = double.NaN,
+    double GpuMemoryTotalMb = double.NaN,
+    double FanRpm = double.NaN,
+    double FanControlPercent = double.NaN,
+    string GpuName = "",
+    string GpuSource = "",
+    // 风扇读数来源：LHM 实测 / EC 直读(ec-probe) / NBFC 服务；空串 = 不可读。
+    string FanSource = "",
+    double FanRawValue = double.NaN);
 
 /// <summary>
 /// 只读遥测源。三级回退，任何一级失败都不中断程序：
@@ -26,6 +38,10 @@ public sealed class HardwareTelemetry : IDisposable
 {
     private readonly Computer? _computer;
     private readonly IHardware? _cpu;
+    /// <summary>GPU 硬件，独显优先、核显次之。</summary>
+    private readonly List<IHardware> _gpus = new();
+    /// <summary>主板及子硬件，风扇转速 / 控制百分比来源（若机型暴露）。</summary>
+    private readonly List<IHardware> _fanSources = new();
     private bool _driverOk;
 
     private RaplPowerMeter? _rapl;
@@ -46,17 +62,38 @@ public sealed class HardwareTelemetry : IDisposable
 
         try
         {
-            var computer = new Computer { IsCpuEnabled = true };
+            var computer = new Computer
+            {
+                IsCpuEnabled = true,
+                IsGpuEnabled = true,
+                IsMotherboardEnabled = true,
+                IsMemoryEnabled = true
+            };
             computer.Open();
             _cpu = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
             _computer = computer;
             _driverOk = _cpu != null;
+
+            foreach (var hw in computer.Hardware)
+            {
+                if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+                    _gpus.Add(hw);
+                if (hw.HardwareType == HardwareType.Motherboard)
+                {
+                    _fanSources.Add(hw);
+                    foreach (var sub in hw.SubHardware) _fanSources.Add(sub);
+                }
+            }
+            // 独显优先：有 GPU Core / GPU Memory 精确传感器；核显只作 D3D 回退
+            _gpus.Sort((a, b) => GpuRank(b).CompareTo(GpuRank(a)));
         }
         catch
         {
             _driverOk = false;
         }
     }
+
+    private static int GpuRank(IHardware hw) => hw.HardwareType == HardwareType.GpuIntel ? 1 : 2;
 
     public bool DriverAvailable => _driverOk;
 
@@ -73,22 +110,22 @@ public sealed class HardwareTelemetry : IDisposable
     /// <summary>传感器总数（诊断页用）。</summary>
     public int SensorCount => _cpu?.Sensors.Length ?? 0;
 
-    /// <summary>诊断：列出 LHM 枚举到的全部硬件与传感器。</summary>
+    /// <summary>诊断：列出 LHM 枚举到的全部硬件与传感器（含 GPU / 主板风扇）。</summary>
     public IEnumerable<string> DumpSensors()
     {
         if (_computer is null) { yield return "Computer 未初始化（驱动不可用）"; yield break; }
 
-        if (_cpu is not null)
+        foreach (var hw in _computer.Hardware)
         {
-            yield return $"CPU 传感器 {_cpu.Sensors.Length} 个";
-            foreach (var s in _cpu.Sensors)
-                yield return $"  {s.SensorType,-12} {s.Name,-26} = {s.Value?.ToString("F1") ?? "null"}";
-        }
-        else
-        {
-            yield return $"硬件数量 {_computer.Hardware.Count}（未找到 CPU）";
-            foreach (var hw in _computer.Hardware)
-                yield return $"[{hw.HardwareType}] {hw.Name}";
+            yield return $"[{hw.HardwareType}] {hw.Name} · 传感器 {hw.Sensors.Length} 个";
+            foreach (var s in hw.Sensors)
+                yield return $"  {s.SensorType,-12} {s.Name,-30} = {s.Value?.ToString("F1") ?? "null"}";
+            foreach (var sub in hw.SubHardware)
+            {
+                yield return $"  └─ [{sub.HardwareType}] {sub.Name}";
+                foreach (var s in sub.Sensors)
+                    yield return $"     {s.SensorType,-12} {s.Name,-30} = {s.Value?.ToString("F1") ?? "null"}";
+            }
         }
     }
 
@@ -115,12 +152,12 @@ public sealed class HardwareTelemetry : IDisposable
 
                     // 优先级：LHM 传感器 > RAPL 实测 > 按负载估算
                     if (!double.IsNaN(lhmPower))
-                        return new TelemetrySample(temp, load, lhmPower, clock, true, "LHM");
+                        return WithExtras(new TelemetrySample(temp, load, lhmPower, clock, true, "LHM"));
 
                     if (!double.IsNaN(raplW))
-                        return new TelemetrySample(temp, load, raplW, clock, true, "RAPL");
+                        return WithExtras(new TelemetrySample(temp, load, raplW, clock, true, "RAPL"));
 
-                    return new TelemetrySample(temp, load, EstimatePower(load), clock, false, "LHM/估算");
+                    return WithExtras(new TelemetrySample(temp, load, EstimatePower(load), clock, false, "LHM/估算"));
                 }
             }
             catch
@@ -134,10 +171,122 @@ public sealed class HardwareTelemetry : IDisposable
         double l = ReadLoadFromSystemTimes();
 
         if (!double.IsNaN(raplW))
-            return new TelemetrySample(t, l, raplW, 0, true, "RAPL");
+            return WithExtras(new TelemetrySample(t, l, raplW, 0, true, "RAPL"));
 
-        return new TelemetrySample(t, l, EstimatePower(l), 0, false,
-            double.IsNaN(t) ? "SystemTimesOnly" : "WMI");
+        return WithExtras(new TelemetrySample(t, l, EstimatePower(l), 0, false,
+            double.IsNaN(t) ? "SystemTimesOnly" : "WMI"));
+    }
+
+    /// <summary>把 GPU / 风扇扩展指标附加到基础采样；任何异常都返回 NaN，不打断主链路。</summary>
+    private TelemetrySample WithExtras(TelemetrySample s)
+    {
+        try
+        {
+            var g = ReadGpu();
+            var f = ReadFan();
+            double rpm = f.Rpm, pct = f.Pct;
+            string fanSource = "LHM 实测 · 只读";
+            double fanRaw = double.NaN;
+
+            // LHM 0.9.4 不支持部分笔记本主板的 EC 传感器（本机 HP 838F 即如此）。
+            // 此时用 NBFC / ec-probe 只读采集真实风扇运行百分比，绝不拿决策树演算值填充。
+            if (double.IsNaN(rpm) && double.IsNaN(pct))
+            {
+                var ext = EcFanReader.ReadRuntime();
+                if (!double.IsNaN(ext.Percent))
+                {
+                    pct = ext.Percent;
+                    fanSource = ext.Source;
+                    fanRaw = ext.RawValue;
+                }
+                else fanSource = string.Empty;
+            }
+
+            return s with
+            {
+                GpuLoadPercent = g.Load,
+                GpuMemoryPercent = g.MemPct,
+                GpuMemoryUsedMb = g.UsedMb,
+                GpuMemoryTotalMb = g.TotalMb,
+                GpuName = g.Name,
+                GpuSource = g.Source,
+                FanRpm = rpm,
+                FanControlPercent = pct,
+                FanSource = fanSource,
+                FanRawValue = fanRaw
+            };
+        }
+        catch
+        {
+            return s;   // 扩展指标失败不影响温度/功耗/决策
+        }
+    }
+
+    /// <summary>
+    /// GPU 使用率与显存占用率。优先独显的精确传感器（GPU Core / GPU Memory）；
+    /// 核显回退到 D3D 负载峰值与共享显存 Used/Total。NaN 表示本机读不到。
+    /// </summary>
+    private (double Load, double MemPct, double UsedMb, double TotalMb, string Name, string Source) ReadGpu()
+    {
+        foreach (var gpu in _gpus)
+        {
+            try { gpu.Update(); } catch { continue; }
+
+            double load = double.NaN, memPct = double.NaN, used = double.NaN, total = double.NaN;
+            foreach (var s in gpu.Sensors)
+            {
+                if (s.Value is not float v) continue;
+                string name = s.Name;
+
+                if (s.SensorType == SensorType.Load &&
+                    name.Equals("GPU Core", StringComparison.OrdinalIgnoreCase)) load = v;
+                else if (s.SensorType == SensorType.Load &&
+                         name.Equals("GPU Memory", StringComparison.OrdinalIgnoreCase)) memPct = v;
+                else if (s.SensorType == SensorType.Load &&
+                         name.StartsWith("D3D ", StringComparison.OrdinalIgnoreCase) &&
+                         (double.IsNaN(load) || v > load)) load = v;   // 核显回退：D3D 峰值
+                else if (s.SensorType == SensorType.SmallData &&
+                         name.Equals("GPU Memory Used", StringComparison.OrdinalIgnoreCase)) used = v;
+                else if (s.SensorType == SensorType.SmallData &&
+                         name.Equals("GPU Memory Total", StringComparison.OrdinalIgnoreCase)) total = v;
+                else if (s.SensorType == SensorType.SmallData &&
+                         name.Contains("Shared Memory Used", StringComparison.OrdinalIgnoreCase) &&
+                         double.IsNaN(used)) used = v;
+                else if (s.SensorType == SensorType.SmallData &&
+                         name.Contains("Shared Memory Total", StringComparison.OrdinalIgnoreCase) &&
+                         double.IsNaN(total)) total = v;
+            }
+
+            if (double.IsNaN(memPct) && !double.IsNaN(used) && !double.IsNaN(total) && total > 0)
+                memPct = Math.Clamp(used / total * 100.0, 0, 100);
+
+            if (!double.IsNaN(load) || !double.IsNaN(memPct))
+                return (load, memPct, used, total, gpu.Name,
+                        gpu.HardwareType == HardwareType.GpuIntel ? "D3D/共享显存" : "LHM GPU");
+        }
+        return (double.NaN, double.NaN, double.NaN, double.NaN, string.Empty, string.Empty);
+    }
+
+    /// <summary>
+    /// 风扇实测：SensorType.Fan = RPM，SensorType.Control = 控制百分比。
+    /// 部分笔记本主板不被 LHM 0.9.4 支持（本机 HP 838F 即如此），此时返回 NaN，
+    /// 由 WithExtras 回退到 NBFC / ec-probe 的只读 EC 采集；全不可读时 UI 才显示 N/A。
+    /// 本类只读，从不写风扇 / EC / PWM。
+    /// </summary>
+    private (double Rpm, double Pct) ReadFan()
+    {
+        double rpm = double.NaN, pct = double.NaN;
+        foreach (var hw in _fanSources)
+        {
+            try { hw.Update(); } catch { continue; }
+            foreach (var s in hw.Sensors)
+            {
+                if (s.Value is not float v) continue;
+                if (s.SensorType == SensorType.Fan && (double.IsNaN(rpm) || v > rpm)) rpm = v;
+                if (s.SensorType == SensorType.Control && (double.IsNaN(pct) || v > pct)) pct = v;
+            }
+        }
+        return (rpm, pct);
     }
 
     // ---------- 传感器挑选 ----------

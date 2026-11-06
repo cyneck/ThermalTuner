@@ -1,0 +1,9 @@
+﻿页面      : monitor
+尺寸      : 1306x803
+CPU       : Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz
+CPU 使用率: 66%
+GPU 使用率: 38%
+GPU 显存  : 5%
+风扇      : 89%（NBFC 服务 · 只读）
+温度/功耗 : 64.9°C / 18W（WMI）
+RESULT: PASS

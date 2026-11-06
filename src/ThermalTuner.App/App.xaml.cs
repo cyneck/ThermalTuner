@@ -27,6 +27,29 @@ public partial class App : Application
             return;
         }
 
+        // 离屏 UI 截图：把真实主窗口渲染成 PNG，用于界面核对与交付说明
+        // 用法：--capture-ui --page monitor --out ui.png
+        if (e.Args.Contains("--capture-ui", StringComparer.OrdinalIgnoreCase))
+        {
+            string png = GetArgValue(e.Args, "--out")
+                         ?? Path.Combine(Path.GetTempPath(), "thermaltuner-ui.png");
+            string page = GetArgValue(e.Args, "--page") ?? "monitor";
+            Shutdown(UiCapture.Run(png, page));
+            return;
+        }
+
+        // EC 只读自动判断：定位 NBFC 生效配置 → 读 EC 寄存器 → 判定风扇读数是否活跃
+        // 用法：--ec-probe --out report.txt [--seconds 6]（需管理员；只调用 read/dump/monitor）
+        if (e.Args.Contains("--ec-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermaltuner-ec-probe.txt");
+            int seconds = int.TryParse(GetArgValue(e.Args, "--seconds"), out int s)
+                          && s is >= 3 and <= 60 ? s : 6;
+            Shutdown(EcProbe.Run(report, seconds));
+            return;
+        }
+
         if (e.Args.Contains("--msr-funcs", StringComparer.OrdinalIgnoreCase))
         {
             string report = GetArgValue(e.Args, "--out")
@@ -58,6 +81,15 @@ public partial class App : Application
             string report = GetArgValue(e.Args, "--out")
                             ?? Path.Combine(Path.GetTempPath(), "thermalpilot-voltage-probe.txt");
             Shutdown(MsrProbe.RunVoltageProbe(report));
+            return;
+        }
+
+        // 只读传感器清单：接入 GPU / 风扇指标前先确认本机暴露了哪些读数
+        if (e.Args.Contains("--sensor-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            string report = GetArgValue(e.Args, "--out")
+                            ?? Path.Combine(Path.GetTempPath(), "thermaltuner-sensors.txt");
+            Shutdown(SensorProbe.Run(report));
             return;
         }
 

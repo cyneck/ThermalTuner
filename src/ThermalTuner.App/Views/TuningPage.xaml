@@ -83,7 +83,7 @@
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap">
               <Run Text="天花板决定「多热才降功耗」。调低 → 更凉更安静；调高 → 更久保持高频，但更接近 " />
               <Run Text="{Binding Limits.TjMax, Mode=OneWay, StringFormat={}{0:F0}}" />
-              <Run Text="°C 硬件保护点。" />
+              <Run Text="°C 硬件保护点。切换档位会重置为该档预设值。" />
             </TextBlock>
           </Border>
         </StackPanel>
@@ -247,7 +247,7 @@
             </StackPanel>
           </Grid>
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
-                     Text="风扇百分比是决策树演算的建议值，未下发到任何硬件；实际转速由 EC 按温度曲线自动调节，软件只能通过降低发热间接影响。" />
+                     Text="Tau / EPP / 风扇为决策树演算值，未写入硬件；自动接管开启时仅 PL1 / PL2 写入 0x610。转速由 EC 按温度曲线自动调节。" />
         </StackPanel>
       </Border>
     </StackPanel>

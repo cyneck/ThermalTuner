@@ -13,7 +13,9 @@ var suites = new (string Name, Action Run)[]
     ("DecisionTree",       () => new DecisionTreeTests().RunAllTests()),
     ("PlatformProfile",    () => new PlatformProfileTests().RunAllTests()),
     ("StressScenario",     () => new StressScenarioTests().RunAllTests()),
-    ("AdvancedParams",     () => new AdvancedParamsTests().RunAllTests())
+    ("AdvancedParams",     () => new AdvancedParamsTests().RunAllTests()),
+    ("ProfileEffect",      () => new ProfileEffectTests().RunAllTests()),
+    ("FanPercent",         () => new FanPercentTests().RunAllTests())
 };
 
 int failedSuites = 0;

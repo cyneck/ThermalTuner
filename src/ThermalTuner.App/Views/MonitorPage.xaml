@@ -74,6 +74,58 @@
       <DockPanel>
         <TextBlock DockPanel.Dock="Top" Text="采样明细（最新在上）" Style="{StaticResource H2}" />
 
+        <!-- 实时指标：全部为 LHM 实测；N/A 表示本机无对应传感器，不拿演算值冒充 -->
+        <Grid DockPanel.Dock="Top" Margin="0,10,0,12"
+              ToolTip="{Binding GpuHintText, Mode=OneWay}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <Border Grid.Column="0" Background="{StaticResource BgSubtle}" CornerRadius="6"
+                  Padding="10,8" Margin="0,0,8,0">
+            <StackPanel>
+              <TextBlock Text="CPU 使用率" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="{Binding CpuLoadText, Mode=OneWay}" Style="{StaticResource Metric}" />
+              <TextBlock Text="LHM · CPU Total" Style="{StaticResource Label}" FontSize="10"
+                         Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Column="1" Background="{StaticResource BgSubtle}" CornerRadius="6"
+                  Padding="10,8" Margin="0,0,8,0">
+            <StackPanel>
+              <TextBlock Text="GPU 使用率" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="{Binding GpuLoadText, Mode=OneWay}" Style="{StaticResource Metric}" />
+              <TextBlock Text="{Binding GpuSourceText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="10" Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Column="2" Background="{StaticResource BgSubtle}" CornerRadius="6"
+                  Padding="10,8" Margin="0,0,8,0"
+                  ToolTip="{Binding GpuMemoryDetailText, Mode=OneWay}">
+            <StackPanel>
+              <TextBlock Text="GPU 显存占用" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="{Binding GpuMemoryText, Mode=OneWay}" Style="{StaticResource Metric}" />
+              <TextBlock Text="{Binding GpuMemoryDetailText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="10" Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Column="3" Background="{StaticResource BgSubtle}" CornerRadius="6"
+                  Padding="10,8" ToolTip="{Binding FanDetailText, Mode=OneWay}">
+            <StackPanel>
+              <TextBlock Text="风扇运行" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Text="{Binding FanMeasuredText, Mode=OneWay}" Style="{StaticResource Metric}" />
+              <TextBlock Text="{Binding FanMeasuredHintText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="10" Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
+          </Border>
+        </Grid>
+
         <Grid DockPanel.Dock="Top" Margin="0,8,0,6">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="70" />
@@ -81,6 +133,7 @@
             <ColumnDefinition Width="80" />
             <ColumnDefinition Width="90" />
             <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="70" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <TextBlock Text="时间" Style="{StaticResource Label}" FontSize="11" />
@@ -88,7 +141,8 @@
           <TextBlock Grid.Column="2" Text="负载" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="3" Text="包功耗" Style="{StaticResource Label}" FontSize="11" />
           <TextBlock Grid.Column="4" Text="PL1 实效" Style="{StaticResource Label}" FontSize="11" />
-          <TextBlock Grid.Column="5" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="5" Text="风扇" Style="{StaticResource Label}" FontSize="11" />
+          <TextBlock Grid.Column="6" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
         </Grid>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -103,6 +157,7 @@
                       <ColumnDefinition Width="80" />
                       <ColumnDefinition Width="90" />
                       <ColumnDefinition Width="90" />
+                      <ColumnDefinition Width="70" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding Time}" Style="{StaticResource Mono}" FontSize="11" />
@@ -110,7 +165,8 @@
                     <TextBlock Grid.Column="2" Text="{Binding Load}" Style="{StaticResource Mono}" FontSize="11" />
                     <TextBlock Grid.Column="3" Text="{Binding Power}" Style="{StaticResource Mono}" FontSize="11" />
                     <TextBlock Grid.Column="4" Text="{Binding Pl1}" Style="{StaticResource Mono}" FontSize="11" />
-                    <TextBlock Grid.Column="5" Text="{Binding Rule}" Style="{StaticResource RowText}" FontSize="11"
+                    <TextBlock Grid.Column="5" Text="{Binding Fan}" Style="{StaticResource Mono}" FontSize="11" />
+                    <TextBlock Grid.Column="6" Text="{Binding Rule}" Style="{StaticResource RowText}" FontSize="11"
                                Foreground="{StaticResource TextSecondary}" />
                   </Grid>
                 </Border>

@@ -14,6 +14,9 @@ public partial class MainWindow : Window
     private TrayService? _tray;
     private bool _reallyExit;
     private bool _hideHintShown;
+
+    /// <summary>离屏截图模式：跳过托盘、首次向导与关闭时的寄存器恢复/配置落盘。</summary>
+    public bool CaptureMode { get; set; }
     private readonly Dictionary<string, (string Title, string Subtitle)> _meta = new()
     {
         ["overview"] = ("概览", "一屏看清温度、功耗与最新决策"),
@@ -55,6 +58,7 @@ public partial class MainWindow : Window
     {
         _session.Start();
         UpdateChrome();
+        if (CaptureMode) return;   // 截图：不建托盘、不弹向导
         SetupTray();
 
         if (!_session.Settings.WizardDone)
@@ -111,6 +115,7 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (CaptureMode) return;   // 截图：绝不恢复 MSR、绝不写 settings.json
         if (!_reallyExit)
         {
             if (_session.Settings.CloseToTray && _tray is not null)
@@ -147,6 +152,23 @@ public partial class MainWindow : Window
     private void Nav_Click(object sender, RoutedEventArgs e)
     {
         if (sender is RadioButton { Tag: string key }) Navigate(key);
+    }
+
+    /// <summary>供离屏渲染 / 集成测试切换到指定页，并同步左侧导航选中态。</summary>
+    public void NavigateTo(string key)
+    {
+        Navigate(key);
+        RadioButton? nav = key switch
+        {
+            "overview" => NavOverview,
+            "tuning" => NavTuning,
+            "monitor" => NavMonitor,
+            "params" => NavParams,
+            "diagnostics" => NavDiagnostics,
+            "settings" => NavSettings,
+            _ => null
+        };
+        if (nav is not null) nav.IsChecked = true;
     }
 
     private void Navigate(string key)

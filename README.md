@@ -1,7 +1,8 @@
 # ThermalTuner
 
 > Windows 笔记本 CPU 热与功耗调优工具：读懂温度与真实功耗，用决策树给出功耗策略，可选写入 MSR 寄存器。
-> 当前版本 **v0.4.3** ｜ 验收机 Intel Core i7-7700HQ / 4C8T / Windows 10 19045
+> 当前版本 **v0.4.4** ｜ 验收机 Intel Core i7-7700HQ / 4C8T / Windows 10 19045
+> v0.4.4：监控面板新增 CPU / GPU / 显存 / 风扇指标与明细列；风扇 EC 只读自动判断（`--ec-probe`）、传感器探针（`--sensor-probe`）、UI 截图工具（`--capture-ui`）；修复档位持久化恢复。
 > 2026-11-06 起产品由 **ThermalPilot** 正式更名为 **ThermalTuner**；旧版配置会自动迁移，见 [§9](#9-仓库结构与模块设计)。
 
 ---
@@ -42,7 +43,7 @@ ThermalTuner 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 | MSR `0x774` EPP | ✅ 可写（机型需可读） | 能效偏好；本机 `0x774` 可读 |
 | MSR `0x1AD` 睿频倍率表 | ✅ 可写 | 仅限 `[8, 出厂单核上限]`，不做超频；**本机实测无性能收益，见 §3** |
 | MSR `0x606` / `0x611` RAPL | 只读 | 能量单位与能量计数器，用于计算真实包功耗 |
-| 风扇 / EC / PWM | ❌ 不控制 | 决策树里的 `TargetFanPercent` 只是动作字段，从未落到硬件；风扇由 EC 按温度曲线自动调速 |
+| 风扇 / EC / PWM | ❌ 不控制 | 决策树里的 `TargetFanPercent` 只是动作字段，从未落到硬件；风扇由 EC 按温度曲线自动调速。v0.4.4 起支持**只读采集**风扇运行档位 |
 | 电源计划 / 电压 / 基频 | ❌ 不控制 | `0x150` FIVR 电压偏移未接入；不写电源计划 |
 
 > 软件只能通过**降低发热**间接让风扇降速，不能直接拨风扇。这是设计选择，不是缺陷。
@@ -56,6 +57,7 @@ ThermalTuner 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 | 默认闸门 | 决策树始终在算，但写入需 `AllowRealWrite && AutoTakeover` 且未被手动微调锁住 |
 | 已证明有效 | 把 PL1 压到**实际满载功耗之下**：45W → 15W 实测 **−7.10°C / −9.51W / −0.58GHz** |
 | 已证明无效 | 放宽 PL1（在当时的单一标量负载下实际功耗 25~34W，天花板之上物理等价）；0x1AD 拉平 38x（核频 3.41→3.41GHz，只多 +2.04W / +1.11°C） |
+| 风扇监控（v0.4.4） | 只读采集风扇运行档位百分比：优先 LHM 传感器 → EC 直读（管理员，`ec-probe read`）→ NBFC 服务状态；NBFC 只读模式下该值是恒定的 EC 档位刻度，**不是物理转速**，详见 [`deliverables/风扇只读采集与EC自动判断-2026-11-06.md`](deliverables/风扇只读采集与EC自动判断-2026-11-06.md) |
 
 > ⚠️ **不要升级 LHM 到 0.9.6+**：0.9.6 起驱动后端换成 PawnIO，随包 IntelMSR 模块只有
 > `ioctl_read_msr`（只读），升级会**静默丢失** `0x610` 写入能力。升级前必须确认新版本提供写接口并跑 `--write-test`。
@@ -91,9 +93,8 @@ ThermalTuner 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 
 | 包 | 适用 |
 | :--- | :--- |
-| `dist/ThermalTuner/`（自包含目录版） | 免装 .NET 运行时，解压即用 |
-| `dist/ThermalTuner-win-x64.zip` | 同上，压缩包 |
-| `dist/ThermalTuner-Stress-v0.4.3.zip` | 带全部自检/压测命令的便携包（框架依赖，需 .NET 8 桌面运行时） |
+| `dist/ThermalTuner-v0.4.4-2026-11-06/`（自包含目录版） | 免装 .NET 运行时，解压即用 |
+| `dist/ThermalTuner-v0.4.4-2026-11-06-win-x64.zip` | 同上，压缩包 |
 
 1. 解压后右键 `ThermalTuner.App.exe` → **以管理员身份运行**（读 MSR / RAPL 必需）。
 2. 首次启动按向导确认档位与安全说明。
@@ -116,8 +117,8 @@ dotnet run --project src/ThermalTuner.Monitor -- --simulate --seconds 30
 | 页面 | 内容 |
 | :--- | :--- |
 | **概览** | 指标卡（温度 / 功耗 / 频率 / PL1）、温度与功耗曲线、最新决策凭证、决策流水 |
-| **智能调优** | 3 档模式（静音 / 平衡 / 性能）、温度天花板滑块、在线热阻与预测稳态、两段式稳态标定、标定前馈上限 |
-| **实时监控** | 连续采样大图、明细表、压测开关、CSV 导出；「PL1 实效」列为寄存器实读 |
+| **智能调优** | 3 档模式（静音 / 均衡 / 性能）、温度天花板滑块、在线热阻与预测稳态、两段式稳态标定、标定前馈上限 |
+| **实时监控** | 连续采样大图、明细表（含「风扇」列）、压测开关、CSV 导出；「PL1 实效」列为寄存器实读；CPU 使用率 / GPU 使用率 / GPU 显存占用率 / **风扇运行百分比**四项只读指标卡。LHM 读不到风扇时自动回退 NBFC / EC 只读采集（管理员走 `ec-probe` 直读），来源显示在卡片副标题，全部不可读才显示 `N/A`。详见 [监控面板指标扩展说明](deliverables/监控面板指标扩展说明-2026-11-06.md) 与 [风扇只读采集与 EC 自动判断](deliverables/风扇只读采集与EC自动判断-2026-11-06.md) |
 | **高级参数** | 固件出厂默认 / 已保存软件优化值双锚点；PL1 / PL2 / Tau / EPP / 睿频倍率；「当前生效」列每拍实读 MSR |
 | **诊断与日志** | 环境体检、传感器清单、事件中心、MSR 审计日志入口 |
 | **设置** | 采样间隔、允许写入 MSR、自动接管、开机重放、退出恢复、开机自启、托盘行为 |
@@ -163,6 +164,9 @@ dotnet run --project src/ThermalTuner.Monitor -- --simulate --seconds 30
 | :--- | :--- | :--- |
 | `--smoke` | 构造会话、逐页加载布局，输出 `RESULT: PASS/FAIL` | 否 |
 | `--shots <dir>` | 离屏渲染各页 PNG，供设计走查 | 否 |
+| `--capture-ui --page monitor --out ui.png` | 渲染**带左侧导航的真实主窗口**为 PNG（需桌面会话；默认 `monitor` 页），附同名 `.txt` 记录当拍读数 | 否 |
+| `--ec-probe --out ec.txt --seconds 6` | **EC 只读自动判断**：自动定位 NBFC 生效配置、读/换算风扇寄存器，dump 与 monitor 交叉验证（需管理员；绝不调用 `ec-probe write`） | 否 |
+| `--sensor-probe --out sensors.txt` | 枚举全部 LHM 传感器 + 一拍聚合指标（含风扇运行百分比与来源） | 否 |
 | `--msr-probe` | 通道状态、0x610 解码、0x774/0x1AD 可读性 | 否 |
 | `--msr-funcs` | 列出 Ring0 后端可用接口 | 否 |
 | `--rapl-probe` | RAPL 能量单位与包功耗采样 | 否 |
@@ -343,6 +347,7 @@ powershell -ExecutionPolicy Bypass -File build/publish.ps1 -Installer       # �
 | 文档 | 内容 |
 | :--- | :--- |
 | [`docs/REPOSITORY.md`](docs/REPOSITORY.md) | **仓库各级目录规划、源码模块设计、数据流与设计约定**（改名后新增） |
+| [`deliverables/监控面板指标扩展说明-2026-11-06.md`](deliverables/监控面板指标扩展说明-2026-11-06.md) | 监控面板四项指标的数据源、实测口径、风扇 `N/A` 原因与验证结果 |
 | [`README_REFACTOR.md`](README_REFACTOR.md) | 决策树重构架构：四象限参数、五节点细节、凭证字段、平台推导、自检闸门 |
 | [`docs/PRD.md`](docs/PRD.md) | 需求与验收基线（v0.3.0 冻结，头部有现行口径声明） |
 | [`deliverables/智能微调生效性判定-v0.4.3.md`](deliverables/智能微调生效性判定-v0.4.3.md) | **产品口径单一来源**：生效矩阵、四条件、可判定验收、分级建议 |

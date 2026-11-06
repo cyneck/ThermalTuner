@@ -33,6 +33,14 @@ internal static class SmokeTest
             sb.AppendLine($"标定持久化   : {session.CalibrationSummaryText}");
             sb.AppendLine($"微调持久化   : {session.SavedTuningText}");
             sb.AppendLine($"开机重放     : {session.Settings.ReplayOnStartup}（允许实写 {session.Settings.AllowRealWrite}）");
+            sb.AppendLine($"档位/天花板  : {session.ProfileLabel}（{session.Profile}）/ {session.CeilingText}");
+            string savedProfile = (session.Settings.Profile ?? "balanced").Trim().ToLowerInvariant();
+            string expectedProfile = savedProfile is "silent" or "performance" ? savedProfile : "balanced";
+            bool profileRestored = session.Profile == expectedProfile;
+            if (!profileRestored) failures++;
+            sb.AppendLine($"档位持久化   : settings.json = {session.Settings.Profile} → " +
+                          $"{(profileRestored ? "已正确恢复" : "恢复失败（档位与天花板会不一致）")}");
+            sb.AppendLine($"自动写入闸门 : {session.AutoApplyGateText}");
             sb.AppendLine();
 
             sb.AppendLine("== 主循环（3 拍）==");

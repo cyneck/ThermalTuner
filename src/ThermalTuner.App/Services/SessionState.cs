@@ -19,7 +19,7 @@ public sealed record DecisionRow(
 public sealed record AlertRow(string Time, string Level, string Title, string Detail);
 
 public sealed record SampleRow(
-    string Time, string Temp, string Load, string Power, string Pl1, string Rule);
+    string Time, string Temp, string Load, string Power, string Pl1, string Rule, string Fan = "--");
 
 /// <summary>界面状态分级，驱动顶部状态条与侧栏角标。</summary>
 public enum StatusLevel { Ok, Info, Warn, Danger }
@@ -71,7 +71,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private readonly List<RawSample> _raw = new();
 
     private readonly record struct RawSample(
-        DateTime At, double Temp, double Load, double Power, double Pl1, string Rule);
+        DateTime At, double Temp, double Load, double Power, double Pl1, string Rule, double FanPct);
 
     private StressLoad? _stress;
     private int _stressThreads = -1;
@@ -105,6 +105,11 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         _controller = new AutoCpuController(HardwareLimitResolver.Resolve(Environment));
         LoadPersistedCalibration();
         IsElevated = CheckElevated();
+        // 档位与天花板必须一起从持久化设置恢复。此前只恢复了 CeilingC，
+        // _profile 永远是字段默认值 balanced，重启后出现「档位 均衡 · 天花板 85°C」，
+        // 且决策树拿到的是均衡的 EPP/PL2/Tau 而不是用户选的静音/性能。
+        string saved = (Settings.Profile ?? "balanced").Trim().ToLowerInvariant();
+        Profile = saved is "silent" or "performance" ? saved : "balanced";
         CeilingC = Math.Min(Settings.CeilingC, Limits.MaxSafeCeiling);
         InitMsr();
 
@@ -535,6 +540,45 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     }
     public string FanText => _fanPercent <= 0 ? "--" : _fanPercent.ToString("F0");
 
+    // ---- 监控面板扩展指标（全部来自 LHM 实测；NaN = 本机不可读，UI 显示 N/A）----
+    private double _gpuLoadPct = double.NaN;
+    private double _gpuMemPct = double.NaN;
+    private double _gpuMemUsedMb = double.NaN;
+    private double _gpuMemTotalMb = double.NaN;
+    private double _fanRpm = double.NaN;
+    private double _fanMeasuredPct = double.NaN;
+    private string _fanSource = string.Empty;
+    private double _fanRawValue = double.NaN;
+    private string _gpuName = string.Empty;
+    private string _gpuSource = string.Empty;
+
+    public string CpuLoadText => $"{LoadPct:F0}%";
+    public string GpuLoadText => double.IsNaN(_gpuLoadPct) ? "N/A" : $"{_gpuLoadPct:F0}%";
+    public string GpuMemoryText => double.IsNaN(_gpuMemPct) ? "N/A" : $"{_gpuMemPct:F0}%";
+    public string GpuMemoryDetailText =>
+        double.IsNaN(_gpuMemUsedMb) || double.IsNaN(_gpuMemTotalMb)
+            ? "容量不可用"
+            : $"{_gpuMemUsedMb:F0} / {_gpuMemTotalMb:F0} MB";
+    /// <summary>风扇实测值；与决策树的「演算建议值（未下发）」严格区分。</summary>
+    public string FanMeasuredText => !double.IsNaN(_fanRpm) ? $"{_fanRpm:F0} RPM"
+        : !double.IsNaN(_fanMeasuredPct) ? $"{_fanMeasuredPct:F0}%" : "N/A";
+    public string FanMeasuredHintText =>
+        !double.IsNaN(_fanRpm) || !double.IsNaN(_fanMeasuredPct)
+            ? (string.IsNullOrEmpty(_fanSource) ? "只读" : _fanSource)
+            : "无可用风扇读数";
+    /// <summary>风扇指标 ToolTip：交代原始 EC 值与换算，不占界面行数。</summary>
+    public string FanDetailText =>
+        double.IsNaN(_fanMeasuredPct) && double.IsNaN(_fanRpm)
+            ? "本机 LHM 与 NBFC/EC 均不可读；不拿决策树的演算建议值冒充实测。"
+            : !double.IsNaN(_fanRawValue)
+                ? $"EC 原始值 {_fanRawValue:F0}，按生效配置 Min/Max 换算为运行百分比；只读采集，软件不写 EC。"
+                : "由 NBFC 服务按生效配置读 EC 换算；只读采集，软件不写 EC/PWM。";
+    public string GpuSourceText => string.IsNullOrEmpty(_gpuSource) ? "未检测到 GPU" : _gpuSource;
+    public string GpuNameText => string.IsNullOrEmpty(_gpuName) ? "未检测到 GPU" : _gpuName;
+    public string GpuHintText =>
+        $"{GpuNameText} · {GpuSourceText}；风扇读数来自 LHM 或 NBFC/EC 只读采集，软件不写 EC/PWM。" +
+        "N/A 表示两种来源都不可用，不用演算值冒充。";
+
     private double _rth = double.NaN;
     public double Rth
     {
@@ -793,13 +837,22 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public bool MsrWritable => MsrStatus == MsrStatus.Writable;
     public bool RealWriteEnabled => Settings.AllowRealWrite && MsrWritable;
     public bool HasMsrBackup => _guard?.StartupBackup is not null;
-    /// <summary>底栏一行状态：当前到底会不会真写硬件。</summary>
-    public string FooterMode => Settings.AllowRealWrite && MsrWritable ? "写入已授权" : "只读监控";
 
-    /// <summary>概览页写入链路说明：随授权状态变化，避免把已实现的写入能力说成未来里程碑。</summary>
-    public string MonitorHintText => RealWriteEnabled
-        ? "写入已授权：决策值经启动备份 / 回读校验后写入 MSR，退出可恢复，开机按已保存的微调值重放。"
-        : "只读监控：决策值仅展示，未写入 MSR。写入需管理员 + 设置页「允许写入 MSR」；链路含启动备份 / 回读校验 / 退出恢复 / 开机重放。";
+    /// <summary>自动接管的四个闸门是否全开；false = 档位与决策只演算，不写寄存器。</summary>
+    public bool AutoApplyAllowed => !_manualLock && MsrWritable
+                                    && Settings.AllowRealWrite && Settings.AutoTakeover;
+
+    /// <summary>底栏一行状态：当前到底会不会真写硬件（含 L3 手动锁与自动接管开关）。</summary>
+    public string FooterMode => AutoApplyAllowed ? "写入已授权" : "只读监控";
+
+    /// <summary>概览页写入链路说明：随真实闸门状态变化，不把「可写」说成「已在写」。</summary>
+    public string MonitorHintText => _manualLock
+        ? "已保存的手动微调（L3）优先：档位与决策只演算，不写寄存器。在「设置」清除保存的微调参数并开启自动接管后才会写入。"
+        : !RealWriteEnabled
+            ? "只读监控：决策值仅展示，未写入 MSR。写入需管理员 + 设置页「允许写入 MSR」；链路含启动备份 / 回读校验 / 退出恢复 / 开机重放。"
+            : !Settings.AutoTakeover
+                ? "自动接管已关闭：决策值仅展示；在「设置」开启后才会按实时温度写入 0x610。"
+                : "写入已授权：决策 PL1 / PL2 经启动备份 / 回读校验后写入 0x610；Tau 保持寄存器原值，EPP 与风扇不下发。";
 
     public string MsrSummary => MsrWritable
         ? (Settings.AllowRealWrite ? "可写 · 已授权" : "可写 · 未授权")
@@ -1201,6 +1254,17 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         return result;
     }
 
+    /// <summary>
+    /// 诊断用：说明当前档位决策到底会不会落到寄存器。
+    /// 只供 --smoke / --env-check 报告使用，不绑定 UI，避免主界面堆说明文字。
+    /// </summary>
+    public string AutoApplyGateText =>
+        _manualLock ? "被手动微调锁挡住（L3 优先）：档位/决策只演算，不写任何寄存器"
+        : !MsrWritable ? "MSR 通道不可写（权限/驱动）：只演算"
+        : !Settings.AllowRealWrite ? "设置页未勾选「允许写入 MSR」：只演算"
+        : !Settings.AutoTakeover ? "自动接管已关闭：只演算"
+        : "自动接管生效：决策 PL1/PL2 写入 0x610；Tau 保持寄存器原值，EPP 与风扇不下发";
+
     /// <summary>自动接管：双开关 + 冷却保护 + 失败熔断（PRD G-08）。</summary>
     private void TryAutoApply(double targetPl1, double targetPl2, double targetTau)
     {
@@ -1501,6 +1565,23 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         var s = _telemetry.Read();
 
         LoadPct = double.IsNaN(s.LoadPercent) ? 0 : s.LoadPercent;
+
+        // 监控面板扩展指标：逐拍刷新，读不到就保持 NaN，界面显示 N/A
+        _gpuLoadPct = s.GpuLoadPercent;
+        _gpuMemPct = s.GpuMemoryPercent;
+        _gpuMemUsedMb = s.GpuMemoryUsedMb;
+        _gpuMemTotalMb = s.GpuMemoryTotalMb;
+        _fanRpm = s.FanRpm;
+        _fanMeasuredPct = s.FanControlPercent;
+        _fanSource = s.FanSource;
+        _fanRawValue = s.FanRawValue;
+        _gpuName = s.GpuName;
+        _gpuSource = s.GpuSource;
+        N(nameof(CpuLoadText)); N(nameof(GpuLoadText)); N(nameof(GpuMemoryText));
+        N(nameof(GpuMemoryDetailText)); N(nameof(FanMeasuredText));
+        N(nameof(FanMeasuredHintText)); N(nameof(FanDetailText));
+        N(nameof(GpuSourceText)); N(nameof(GpuNameText)); N(nameof(GpuHintText));
+
         if (!double.IsNaN(s.PowerW)) PowerW = s.PowerW;
         PowerSource = s.Source;
         PowerFromDriver = s.PowerMeasured;
@@ -1590,10 +1671,11 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             $"{LoadPct:F0}%",
             PowerW <= 0 ? "N/A" : $"{PowerW:F0}W",
             double.IsNaN(FwPl1W) ? $"{dec.Pl1W:F1}W*" : $"{FwPl1W:F1}W",
-            LastRule), TableCap);
+            LastRule,
+            double.IsNaN(_fanMeasuredPct) ? "--" : $"{_fanMeasuredPct:F0}%"), TableCap);
 
         _raw.Add(new RawSample(DateTime.Now, TempC, LoadPct, PowerW, dec.Pl1W,
-            LastRule.Replace(",", "，")));
+            LastRule.Replace(",", "，"), _fanMeasuredPct));
         if (_raw.Count > 3600) _raw.RemoveAt(0);
 
         // 事件：触顶 / 硬件热保护 / 恢复
@@ -1630,9 +1712,10 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public int ExportCsv(string path)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,温度(°C),负载(%),包功耗(W),决策PL1(W),命中规则");
+        sb.AppendLine("时间,温度(°C),负载(%),包功耗(W),决策PL1(W),风扇(%),命中规则");
         foreach (var r in _raw)
-            sb.AppendLine($"{r.At:yyyy-MM-dd HH:mm:ss},{r.Temp:F1},{r.Load:F0},{r.Power:F0},{r.Pl1:F1},{r.Rule}");
+            sb.AppendLine($"{r.At:yyyy-MM-dd HH:mm:ss},{r.Temp:F1},{r.Load:F0},{r.Power:F0},{r.Pl1:F1}," +
+                          $"{(double.IsNaN(r.FanPct) ? "" : r.FanPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))},{r.Rule}");
 
         File.WriteAllText(path, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         return _raw.Count;

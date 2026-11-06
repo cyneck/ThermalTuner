@@ -1,0 +1,74 @@
+﻿== NBFC / EC 只读自动判断 ==
+时间        : 2026-11-06 21:53:53
+命令边界    : 只执行 nbfc status 与 ec-probe read / dump / monitor；不执行 write，不写 EC。
+安装目录    : C:\Program Files (x86)\NoteBook FanControl
+
+== 1. NBFC 服务状态（nbfc.exe status，只读） ==
+Service enabled		: True
+Read-only		: True
+Selected config name	: HP OMEN Notebook PC 15
+Temperature		: 61
+
+Fan display name	: CPU fan
+Auto control enabled	: True
+Critical mode enabled	: False
+Current fan speed	: 88.83
+Target fan speed	: 0.00
+Fan speed steps		: 197
+
+== 2. 读数活跃性（6 次 / 间隔 1s） ==
+  1: 温度 61 °C · Current fan speed 88.83
+  2: 温度 62 °C · Current fan speed 88.83
+  3: 温度 62 °C · Current fan speed 88.83
+  4: 温度 61 °C · Current fan speed 88.83
+  5: 温度 61 °C · Current fan speed 88.83
+  6: 温度 61 °C · Current fan speed 88.83
+判定        : Current fan speed 6 次完全不变（不可作为实时转速依据）；Read-only=True · Target=0.00
+
+== 3. 自动判断生效配置与 EC 寄存器 ==
+配置文件    : C:\Program Files (x86)\NoteBook FanControl\Configs\HP OMEN Notebook PC 15.xml
+配置机型    : HP OMEN 5001NG
+风扇名      : CPU fan
+读寄存器    : 149     写寄存器: 148（本命令不写）
+速度编码    : Min=255 / Max=58 · EC 轮询 2222 ms
+NBFC 报告值 : 88.83%（换算所需原始值由下方 read 给出）
+
+== 4. ec-probe read 149（只读） ==
+退出码 0:
+80 (0x50)
+解析原始值  : 80
+按配置换算  : 88.83%
+
+== 5. ec-probe dump（只读快照，截取前 20 行） ==
+     | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  ---|------------------------------------------------
+  00 | 00 80 50 24 02 23 00 00 00 00 00 00 00 00 50 00
+  10 | 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  20 | 00 00 00 00 08 00 00 00 03 00 00 00 00 00 00 00
+  30 | 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  40 | 0B 01 0C 14 04 80 00 29 24 00 02 02 00 00 01 01
+  50 | 18 00 14 00 00 04 00 00 3C 2A 00 00 00 00 00 00
+  60 | 00 00 00 00 00 00 00 02 08 50 00 0A 00 0C 0C 00
+  70 | C6 11 B2 11 28 3C 80 33 33 33 2D 31 42 2D 34 00
+  80 | A4 00 F8 00 00 0F 11 A3 42 11 00 00 01 C0 00 02
+  90 | 00 00 B2 04 ED 50 61 2C 00 C0 44 00 00 A6 0B 03
+  A0 | 0B 80 00 66 FF 20 00 00 00 15 00 00 00 01 00 00
+  B0 | 00 00 AE 0B 00 29 23 2A 00 00 00 07 42 40 2E 28
+  C0 | 00 00 00 FE 0A 00 00 00 00 00 00 00 00 00 D1 D1
+  D0 | 61 00 00 00 26 05 00 02 61 00 1D 03 00 00 00 00
+  E0 | 00 00 50 50 55 00 00 00 00 5F 56 00 00 41 00 00
+  F0 | 08 00 22 00 00 00 80 0D FE 00 34 30 32 38 30 50
+  
+退出码 0 · 总行数 19
+
+== 6. ec-probe monitor 6s（只读，自动列出变化寄存器） ==
+退出码 0 · CSV: C:\Users\hp\AppData\Local\Temp\thermaltuner-ec-monitor-20261106-215400.csv
+控制台输出  : monitoring... /  / [stderr] / �����Ч��
+
+== 结论（供人工判断，不自动改任何参数） ==
+· 生效配置为「HP OMEN Notebook PC 15」，配置机型见上；与本机主板是否匹配需人工核对。
+· NBFC 报告的 Current fan speed = 88.83%，多次采样恒定，且当前为只读模式、Target=0，不可直接当作实时风扇运行百分比。
+· 真实百分比应以 ec-probe 读到的 EC 原始值按生效配置 Min/Max 换算；若 read 失败需管理员运行。
+· 后期风扇微调属于控制层（需写 WriteRegister），本命令与运行时采集均不写 EC。
+
+RESULT: PASS（只读自动判断完成）
