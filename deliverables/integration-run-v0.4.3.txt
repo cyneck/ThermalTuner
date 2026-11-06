@@ -34,7 +34,7 @@ dotnet     : C:\Users\hp\.dotnet-sdk\dotnet.exe
 
 ==== 8. 满载压测（真实写入 0x610 / 0x1AD，结束自动恢复） ====
 [PASS] stress-test :: exit=0; 90s; MSR 通道       : 可写 / 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认） / 固件出厂默认   : 固件出厂默认（启动时备份）：PL1 45.0W · PL2 56.2W · Tau 28672s
-[PASS] calibrate-sweep :: exit=0; 99s; ThermalPilot 多档 PL1 阶梯压测智能标定 / MSR 通道           : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr) / 可写
+[PASS] calibrate-sweep :: exit=0; 99s; ThermalTuner 多档 PL1 阶梯压测智能标定 / MSR 通道           : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr) / 可写
 [PASS] turbo-stress :: exit=0; 100s; MSR 通道           : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr) / 可写 / 固件出厂默认       : 固件出厂默认（启动时备份）：PL1 45.0W · PL2 56.2W · Tau 28672s
 [PASS] final-msr-probe :: exit=0; 0s; 状态         : Writable / 可写 / 详情         : 可读可写（PL1 45.000W(en) / PL2 56.250W(en) / Tau 28672s / lock=False；写入以回读校验确认）
 

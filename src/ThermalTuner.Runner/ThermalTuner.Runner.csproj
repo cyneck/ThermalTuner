@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ThermalTuner.Runner</RootNamespace>
+    <AssemblyName>ThermalTuner.Runner</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ThermalTuner.Core\ThermalTuner.Core.csproj" />
+    <ProjectReference Include="..\..\tests\ThermalTuner.Core.Tests\ThermalTuner.Core.Tests.csproj" />
+  </ItemGroup>
+
+</Project>

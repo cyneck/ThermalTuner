@@ -1,7 +1,8 @@
-# ThermalPilot（ThermalTuner）
+# ThermalTuner
 
 > Windows 笔记本 CPU 热与功耗调优工具：读懂温度与真实功耗，用决策树给出功耗策略，可选写入 MSR 寄存器。
 > 当前版本 **v0.4.3** ｜ 验收机 Intel Core i7-7700HQ / 4C8T / Windows 10 19045
+> 2026-11-06 起产品由 **ThermalPilot** 正式更名为 **ThermalTuner**；旧版配置会自动迁移，见 [§9](#9-仓库结构与模块设计)。
 
 ---
 
@@ -15,7 +16,7 @@
 - [6. 工作原理](#6-工作原理)
 - [7. 自检与压测命令](#7-自检与压测命令)
 - [8. 测试](#8-测试)
-- [9. 目录结构](#9-目录结构)
+- [9. 仓库结构与模块设计](#9-仓库结构与模块设计)
 - [10. 持久化与恢复语义](#10-持久化与恢复语义)
 - [11. 已知限制与排障](#11-已知限制与排障)
 - [12. 构建与发布](#12-构建与发布)
@@ -25,7 +26,7 @@
 
 ## 1. 这是什么
 
-ThermalPilot 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三件事：
+ThermalTuner 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三件事：
 
 1. **看见**：读取 CPU 封装温度、核心频率、负载，并通过 RAPL 能量计数器（`0x611`）算出**真实包功耗**，而不是用负载估算。
 2. **判断**：把物理约束、用户偏好、在线热模型拆成四象限参数，交给五节点决策树短路求值，输出带因果凭证的 PL1 / PL2 / Tau 建议。
@@ -82,7 +83,7 @@ ThermalPilot 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 历史报告里的 25W / 30.5W / 33.9W 都是**当时那一种负载**下的读数，换负载或换机器必须重跑 `--scenario-sweep`；
 以管理员运行还能拿到「峰值功耗 / 实读 PL1」的覆盖率判定。
 
-产品口径：固件里的值是**出厂默认，掉电即恢复、不可持久化修改**；可持久化的是软件侧实测标定值与手动微调值，存 `%LOCALAPPDATA%\ThermalPilot\settings.json`，开机由软件重放写入寄存器；软件不运行就按固件默认散热逻辑运转。
+产品口径：固件里的值是**出厂默认，掉电即恢复、不可持久化修改**；可持久化的是软件侧实测标定值与手动微调值，存 `%LOCALAPPDATA%\ThermalTuner\settings.json`，开机由软件重放写入寄存器；软件不运行就按固件默认散热逻辑运转。
 
 ## 4. 快速开始
 
@@ -90,11 +91,11 @@ ThermalPilot 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 
 | 包 | 适用 |
 | :--- | :--- |
-| `dist/ThermalPilot/`（自包含目录版） | 免装 .NET 运行时，解压即用 |
-| `dist/ThermalPilot-win-x64.zip` | 同上，压缩包 |
-| `dist/ThermalPilot-Stress-v0.4.3.zip` | 带全部自检/压测命令的便携包（框架依赖，需 .NET 8 桌面运行时） |
+| `dist/ThermalTuner/`（自包含目录版） | 免装 .NET 运行时，解压即用 |
+| `dist/ThermalTuner-win-x64.zip` | 同上，压缩包 |
+| `dist/ThermalTuner-Stress-v0.4.3.zip` | 带全部自检/压测命令的便携包（框架依赖，需 .NET 8 桌面运行时） |
 
-1. 解压后右键 `ThermalPilot.App.exe` → **以管理员身份运行**（读 MSR / RAPL 必需）。
+1. 解压后右键 `ThermalTuner.App.exe` → **以管理员身份运行**（读 MSR / RAPL 必需）。
 2. 首次启动按向导确认档位与安全说明。
 3. 想真正写入寄存器：**设置页**打开「允许写入 MSR」，再按需打开「自动接管」。
 4. 只观察不写入：保持两个开关关闭，界面照常显示决策与预测，但寄存器不变。
@@ -103,9 +104,9 @@ ThermalPilot 是一个桌面端（WPF / .NET 8）CPU 热管理工具。它做三
 
 ```bash
 dotnet build ThermalTuner.sln                  # 0 warning / 0 error
-dotnet run --project src/ThermalPilot.App      # 启动图形界面
-dotnet run --project src/ThermalPilot.Runner   # 环境探测 + 单测 + 模拟回路（无需硬件）
-dotnet run --project src/ThermalPilot.Monitor -- --simulate --seconds 30
+dotnet run --project src/ThermalTuner.App      # 启动图形界面
+dotnet run --project src/ThermalTuner.Runner   # 环境探测 + 单测 + 模拟回路（无需硬件）
+dotnet run --project src/ThermalTuner.Monitor -- --simulate --seconds 30
 ```
 
 要求：Windows 10 1809+ / Windows 11，x64；.NET 8 SDK（构建）或 .NET 8 Desktop Runtime（运行框架依赖版）。读取 MSR / RAPL 需管理员权限。
@@ -121,7 +122,7 @@ dotnet run --project src/ThermalPilot.Monitor -- --simulate --seconds 30
 | **诊断与日志** | 环境体检、传感器清单、事件中心、MSR 审计日志入口 |
 | **设置** | 采样间隔、允许写入 MSR、自动接管、开机重放、退出恢复、开机自启、托盘行为 |
 
-设计稿：`design/ThermalPilot-UI.html`。
+设计稿：`design/ThermalTuner-UI.html`。
 
 ## 6. 工作原理
 
@@ -194,8 +195,8 @@ dotnet run --project src/ThermalPilot.Monitor -- --simulate --seconds 30
 
 ```powershell
 # 管理员 PowerShell
-.\ThermalPilot.App.exe --write-test --out write-test.txt
-.\ThermalPilot.App.exe --stress-test --out stress.txt --csv stress.csv --seconds 40 --low-pl1 15
+.\ThermalTuner.App.exe --write-test --out write-test.txt
+.\ThermalTuner.App.exe --stress-test --out stress.txt --csv stress.csv --seconds 40 --low-pl1 15
 ```
 
 压测结束会恢复固件默认值并释放压测线程；报告里会打印最终 `0x610` 实读供复核。
@@ -205,7 +206,7 @@ dotnet run --project src/ThermalPilot.Monitor -- --simulate --seconds 30
 ### 8.1 单元 / 功能测试（无需硬件）
 
 ```bash
-dotnet run --project tests/ThermalPilot.Core.Tests -c Release
+dotnet run --project tests/ThermalTuner.Core.Tests -c Release
 ```
 
 覆盖模块：
@@ -245,33 +246,50 @@ powershell -ExecutionPolicy Bypass -File build/test.ps1 -Hardware -Full -Elevate
 ### 8.3 实时监控工具
 
 ```bash
-dotnet run --project src/ThermalPilot.Monitor -- --simulate --stress --seconds 60
-ThermalPilot.Monitor.exe --seconds 120 --profile performance
-ThermalPilot.Monitor.exe --diag
+dotnet run --project src/ThermalTuner.Monitor -- --simulate --stress --seconds 60
+ThermalTuner.Monitor.exe --seconds 120 --profile performance
+ThermalTuner.Monitor.exe --diag
 ```
 
 参数：`--profile silent|balanced|performance`、`--interval <ms>`、`--out <file>`、`--simulate`、`--stress`、`--diag`。
 
-## 9. 目录结构
+## 9. 仓库结构与模块设计
+
+> 完整版见 [`docs/REPOSITORY.md`](docs/REPOSITORY.md)（各级目录用途、模块依赖、数据流、设计约定）。
 
 ```
 ThermalTuner/
 ├─ src/
-│  ├─ ThermalPilot.Core/          纯逻辑：决策树、热模型、MSR 编解码、平台探测（无 UI / 无硬件依赖）
-│  ├─ ThermalPilot.App/           WPF 主程序：会话状态、MSR 通道与护栏、六页界面、自检命令
-│  ├─ ThermalPilot.Monitor/       控制台实时监控 / 决策流水（诊断用）
-│  └─ ThermalPilot.Runner/        无界面演示：环境探测 → 约束推导 → 单测 → 模拟回路
-├─ tests/ThermalPilot.Core.Tests/ 独立测试入口（零外部测试框架依赖）
-├─ build/                         publish.ps1 / test.ps1 / Inno Setup 脚本
-├─ docs/PRD.md                    需求与验收基线（v0.3.0 原文冻结）
-├─ deliverables/                  实测报告、判定口径、审查记录
-├─ design/                        UI 设计稿
-└─ README_REFACTOR.md             决策树重构架构说明
+│  ├─ ThermalTuner.Core/          纯逻辑：决策树、热模型、MSR 编解码、平台探测、负载场景库（无 UI / 无硬件依赖）
+│  ├─ ThermalTuner.App/           WPF 主程序：会话状态、MSR 通道与护栏、六页界面、自检命令、Assets 图标
+│  ├─ ThermalTuner.Monitor/       控制台实时监控 / 决策流水（诊断用）
+│  └─ ThermalTuner.Runner/        无界面演示：环境探测 → 约束推导 → 单测 → 模拟回路
+├─ tests/ThermalTuner.Core.Tests/ 独立测试入口（零外部测试框架依赖）
+├─ build/                         publish.ps1 / test.ps1 / generate-icon.ps1 / installer/*.iss
+├─ docs/                          PRD.md（v0.3.0 原文冻结）+ REPOSITORY.md（本文详版）
+├─ deliverables/                  实测报告、判定口径、设计与验证文档（入库，供审阅追溯）
+├─ design/                        UI 设计稿（静态 HTML）
+├─ dist/                          体验包 exe / zip（.gitignore 排除）
+├─ artifacts/                     publish 中间产物（.gitignore 排除）
+└─ .workbuddy/                    项目工作记忆（.gitignore 排除，不是缓存，勿删）
 ```
+
+**模块分层（简版）**：`Core` 全是可单测的纯函数（决策树 `DecisionTree/`、位域编解码 `Msr/`、
+平台探测 `Environment/`、档位与能力 `Taxonomy/`、负载内核 `Stress/`）；
+`App` 负责唯一门面 `Services/Msr/MsrChannel`、写入护栏 `MsrGuard`、状态中枢 `SessionState`、
+遥测、持久化与界面 `Views/`；`Monitor` / `Runner` 只复用 Core，不写 MSR。
+
+**数据流**：`LHM/RAPL → HardwareTelemetry → SessionState(1Hz) → AutoCpuController → MsrGuard
+→ 0x610/0x774/0x1AD/0x150`，写入一律经过「备份 → 读-改-写 → 回读校验 → 失败回滚 → 审计」。
+参数分三层：L1 固件固化值（只读基准，不可持久化）、L2 智能标定推荐、L3 用户编辑值（开机重放）；
+能否编辑由首次环境自检 `capability.json` 决定。详见 [`docs/REPOSITORY.md`](docs/REPOSITORY.md)。
+
+**更名兼容**：数据目录由 `%LOCALAPPDATA%\ThermalPilot` 迁到 `ThermalTuner`，首次启动自动复制
+旧配置（标定/微调/MSR 出厂备份/能力快照），旧目录保留不删；HKCU Run 旧启动项仅在指向旧 exe 时清理。
 
 ## 10. 持久化与恢复语义
 
-数据目录：`%LOCALAPPDATA%\ThermalPilot\`
+数据目录：`%LOCALAPPDATA%\ThermalTuner\`
 
 | 文件 | 内容 |
 | :--- | :--- |
@@ -324,6 +342,7 @@ powershell -ExecutionPolicy Bypass -File build/publish.ps1 -Installer       # �
 
 | 文档 | 内容 |
 | :--- | :--- |
+| [`docs/REPOSITORY.md`](docs/REPOSITORY.md) | **仓库各级目录规划、源码模块设计、数据流与设计约定**（改名后新增） |
 | [`README_REFACTOR.md`](README_REFACTOR.md) | 决策树重构架构：四象限参数、五节点细节、凭证字段、平台推导、自检闸门 |
 | [`docs/PRD.md`](docs/PRD.md) | 需求与验收基线（v0.3.0 冻结，头部有现行口径声明） |
 | [`deliverables/智能微调生效性判定-v0.4.3.md`](deliverables/智能微调生效性判定-v0.4.3.md) | **产品口径单一来源**：生效矩阵、四条件、可判定验收、分级建议 |

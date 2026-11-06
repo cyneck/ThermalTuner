@@ -1,4 +1,4 @@
-﻿# ThermalPilot 构建脚本（便携版 + 安装包）
+﻿# ThermalTuner 构建脚本（便携版 + 安装包）
 #
 # 用法：
 #   pwsh -File build/publish.ps1                 # 框架依赖单文件（约 12MB，需目标机装 .NET 8 桌面运行时）
@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root "artifacts/app-win-x64"
-$proj = Join-Path $root "src/ThermalPilot.App/ThermalPilot.App.csproj"
+$proj = Join-Path $root "src/ThermalTuner.App/ThermalTuner.App.csproj"
 # 本机只装了用户级 SDK（无系统级 dotnet SDK），优先用 DOTNET_ROOT 指向的 dotnet.exe
 $dotnet = if ($env:DOTNET_ROOT -and (Test-Path (Join-Path $env:DOTNET_ROOT "dotnet.exe"))) {
     Join-Path $env:DOTNET_ROOT "dotnet.exe"
@@ -40,7 +40,7 @@ Write-Host "==> 发布（SelfContained=$SelfContained）" -ForegroundColor Cyan
 & $dotnet publish @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败" }
 
-$exe = Join-Path $outDir "ThermalPilot.App.exe"
+$exe = Join-Path $outDir "ThermalTuner.App.exe"
 if (-not (Test-Path $exe)) { throw "未生成 $exe" }
 
 $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
@@ -61,13 +61,13 @@ if ($Installer) {
 
     if (-not $iscc) {
         Write-Warning "未找到 Inno Setup 6（ISCC.exe）。请安装后重试：https://jrsoftware.org/isdl.php"
-        Write-Warning "安装包脚本已就绪：build/installer/ThermalPilot.App.iss"
+        Write-Warning "安装包脚本已就绪：build/installer/ThermalTuner.App.iss"
         exit 0
     }
 
     Write-Host "==> 生成安装包" -ForegroundColor Cyan
-    & $iscc "/DMyAppVersion=$Version" "/DSourceDir=$outDir" (Join-Path $root "build/installer/ThermalPilot.App.iss")
+    & $iscc "/DMyAppVersion=$Version" "/DSourceDir=$outDir" (Join-Path $root "build/installer/ThermalTuner.App.iss")
     if ($LASTEXITCODE -ne 0) { throw "ISCC 失败" }
-    Get-ChildItem (Join-Path $root "artifacts") -Filter "ThermalPilot-Setup-*.exe" |
+    Get-ChildItem (Join-Path $root "artifacts") -Filter "ThermalTuner-Setup-*.exe" |
         ForEach-Object { Write-Host "==> 安装包：$($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" -ForegroundColor Green }
 }

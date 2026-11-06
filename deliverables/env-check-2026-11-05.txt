@@ -1,5 +1,5 @@
 ﻿==========================================================
- ThermalPilot 环境自检 / 参数能力报告
+ ThermalTuner 环境自检 / 参数能力报告
  检查时间: 2026-11-05 19:45:14
 ==========================================================
 
@@ -44,5 +44,5 @@ HWP (0x774)   : 预期可用（通用参数可智能标定推荐）
 == 6. 遥测 ==
 命令行模式：遥测未逐拍采样；温度 / 功耗可读性请以界面「实时监控」为准。
 
-能力快照       : C:\Users\hp\AppData\Local\ThermalPilot\capability.json
+能力快照       : C:\Users\hp\AppData\Local\ThermalTuner\capability.json
 RESULT: 环境自检完成

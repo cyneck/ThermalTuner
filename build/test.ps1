@@ -1,4 +1,4 @@
-﻿# ThermalPilot 集成测试脚本
+﻿# ThermalTuner 集成测试脚本
 #
 # 用法（Windows PowerShell 5.1 或 PowerShell 7 均可）：
 #   powershell -ExecutionPolicy Bypass -File build/test.ps1                     # 轻量：构建 + 功能测试 + Runner + Monitor + App 冒烟
@@ -175,14 +175,14 @@ if ($SkipBuild) {
 
 # ---------- 2. Core 功能测试 ----------
 Section "2. Core 功能测试（MsrEncoding / TurboRatio / ThermalCalibration / ThermalResistance / DecisionTree / PlatformProfile）"
-$testProj = Join-Path $root "tests/ThermalPilot.Core.Tests"
+$testProj = Join-Path $root "tests/ThermalTuner.Core.Tests"
 $testRes = Invoke-Capture $dotnet @("run", "--project", ('"' + $testProj + '"'), "-c", "Release", "--no-build")
 $testSummary = ($testRes.Output -split "`r?`n" | Where-Object { $_ -match "^套件|^断言|^RESULT" }) -join " / "
 Add-Result "core-tests" ($testRes.Code -eq 0 -and $testRes.Output -match "RESULT: PASS") ("exit=" + $testRes.Code + "; " + $testSummary)
 
 # ---------- 3. Runner ----------
 Section "3. Runner 环境自适应回路"
-$runnerProj = Join-Path $root "src/ThermalPilot.Runner"
+$runnerProj = Join-Path $root "src/ThermalTuner.Runner"
 $runnerRes = Invoke-Capture $dotnet @("run", "--project", ('"' + $runnerProj + '"'), "-c", "Release", "--no-build")
 $runnerKey = ($runnerRes.Output -split "`r?`n" | Where-Object { $_ -match "CPU 品牌|TjMax|PL1 范围|完成" } | Select-Object -First 3) -join " / "
 Add-Result "runner" ($runnerRes.Code -eq 0 -and $runnerRes.Output -match "完成") ("exit=" + $runnerRes.Code + "; " + $runnerKey)
@@ -190,9 +190,9 @@ Add-Result "runner" ($runnerRes.Code -eq 0 -and $runnerRes.Output -match "完成
 # ---------- 4. App 发布 ----------
 Section "4. 发布 App（框架依赖，win-x64）"
 $appDir = Join-Path $root "artifacts/integration-app"
-$appExe = Join-Path $appDir "ThermalPilot.App.exe"
+$appExe = Join-Path $appDir "ThermalTuner.App.exe"
 if (Test-Path $appDir) { Remove-Item $appDir -Recurse -Force }
-$appProj = Join-Path $root "src/ThermalPilot.App/ThermalPilot.App.csproj"
+$appProj = Join-Path $root "src/ThermalTuner.App/ThermalTuner.App.csproj"
 $pubRes = Invoke-Capture $dotnet @("publish", ('"' + $appProj + '"'), "-c", "Release", "-r", "win-x64",
     "--self-contained", "false", "-o", ('"' + $appDir + '"'), "--nologo")
 $appOk = ($pubRes.Code -eq 0) -and (Test-Path $appExe)
@@ -255,7 +255,7 @@ if ($Hardware -and $isAdmin) {
 
 # ---------- 7. Monitor ----------
 Section "7. Monitor 冒烟（合成热模型）"
-$monitorExe = Join-Path $root "src/ThermalPilot.Monitor/bin/Release/net8.0-windows/ThermalPilot.Monitor.exe"
+$monitorExe = Join-Path $root "src/ThermalTuner.Monitor/bin/Release/net8.0-windows/ThermalTuner.Monitor.exe"
 if (-not (Test-Path $monitorExe)) {
     Add-Result "monitor" $false "未找到 $monitorExe（先执行构建）"
 } else {

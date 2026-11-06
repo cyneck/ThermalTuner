@@ -1,5 +1,9 @@
 # ThermalPilot 产品需求文档（PRD）
 
+> **更名声明（2026-11-06）**：产品已正式更名为 **ThermalTuner**。本文件为 v0.3.0 阶段的
+> 历史原文冻结（见 `README.md` 与 `docs/REPOSITORY.md`），正文中的「ThermalPilot」均指
+> 现产品 ThermalTuner，属当时的命名，不作正文改写。当前实现口径以 `README.md` 为准。
+
 | 项 | 内容 |
 |---|---|
 | 版本 | v1.0（对应原型 v2 / 代码骨架 `src/ThermalPilot.App`） |

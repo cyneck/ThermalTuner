@@ -1,4 +1,4 @@
-==== ThermalPilot Core 功能测试 ====
+==== ThermalTuner Core 功能测试 ====
 All MSR encoding tests passed successfully!
 PASS  MsrEncoding             19 ms
 PASS  TurboRatioLimit         12 ms

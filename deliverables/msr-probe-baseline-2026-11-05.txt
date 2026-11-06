@@ -1,7 +1,7 @@
 ﻿== MSR 后端 ==
 后端         : LHM 0.9.4 / WinRing0 (Ring0.WriteMsr)
 LHM 程序集   : LibreHardwareMonitorLib, Version=0.9.4.0, Culture=neutral, PublicKeyToken=null
-位置         : D:\code\ThermalTuner\src\ThermalPilot.App\bin\Debug\net8.0-windows\LibreHardwareMonitorLib.dll
+位置         : D:\code\ThermalTuner\src\ThermalTuner.App\bin\Debug\net8.0-windows\LibreHardwareMonitorLib.dll
 
 == Ring0 接口 ==
 MSR 相关方法 : 5 个
@@ -22,5 +22,5 @@ Lock         : False
 0x774 HWP_REQUEST EPP     : 0x0000019E0000261C（可读）
 0x1AD TURBO_RATIO_LIMIT   : 0x0000000022232426（可读）
 
-数据目录     : C:\Users\hp\AppData\Local\ThermalPilot
-启动备份     : C:\Users\hp\AppData\Local\ThermalPilot\backup\msr-startup.json
+数据目录     : C:\Users\hp\AppData\Local\ThermalTuner
+启动备份     : C:\Users\hp\AppData\Local\ThermalTuner\backup\msr-startup.json

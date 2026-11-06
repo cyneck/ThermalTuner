@@ -1,0 +1,140 @@
+<Window x:Class="ThermalTuner.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ThermalTuner · CPU 热约束调优"
+        Icon="Assets/ThermalTuner.ico"
+        Height="840" Width="1320" MinHeight="680" MinWidth="1080"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgCanvas}"
+        FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="212" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <!-- ================= 侧边栏 ================= -->
+    <Border Grid.Column="0" Background="{StaticResource BgSurface}"
+            BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
+      <DockPanel>
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,20,16,20">
+          <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource Accent}">
+            <TextBlock Text="TP" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontFamily="{StaticResource MonoFont}" />
+          </Border>
+          <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="ThermalTuner" Style="{StaticResource H2}" />
+            <TextBlock Text="CPU 热约束调优" Style="{StaticResource Label}" FontSize="11" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16">
+          <Border x:Name="AlertPanel" Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8">
+            <StackPanel>
+              <TextBlock Text="事件中心" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Style="{StaticResource Mono}" Margin="0,2,0,0">
+                <Run Text="{Binding AlertCount, Mode=OneWay}" />
+                <Run Text=" 条记录" />
+              </TextBlock>
+            </StackPanel>
+          </Border>
+          <TextBlock Text="v0.4.0" Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" />
+        </StackPanel>
+
+        <StackPanel Margin="0,4,0,0">
+          <RadioButton x:Name="NavOverview" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="概览" Tag="overview" IsChecked="True" Click="Nav_Click" />
+          <RadioButton x:Name="NavTuning" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="智能调优" Tag="tuning" Click="Nav_Click" />
+          <RadioButton x:Name="NavMonitor" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="实时监控" Tag="monitor" Click="Nav_Click" />
+          <RadioButton x:Name="NavParams" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="高级参数" Tag="params" Click="Nav_Click" />
+          <RadioButton x:Name="NavDiagnostics" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="诊断与日志" Tag="diagnostics" Click="Nav_Click" />
+          <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" GroupName="nav"
+                       Content="设置" Tag="settings" Click="Nav_Click" />
+        </StackPanel>
+
+      </DockPanel>
+    </Border>
+
+    <!-- ================= 主区域 ================= -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="56" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="28" />
+      </Grid.RowDefinitions>
+
+      <!-- 顶栏 -->
+      <Border Grid.Row="0" Background="{StaticResource BgSurface}"
+              BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
+        <Grid Margin="24,0">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock x:Name="PageTitle" Style="{StaticResource H1}" Text="概览" />
+            <TextBlock x:Name="PageSub" Style="{StaticResource Label}" Margin="12,4,0,0"
+                       Text="一屏看清温度、功耗与最新决策" />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Border Style="{StaticResource Chip}" ToolTip="{Binding CpuName}">
+              <TextBlock Style="{StaticResource Mono}" Text="{Binding CpuName}"
+                         MaxWidth="240" TextTrimming="CharacterEllipsis" />
+            </Border>
+            <Border Style="{StaticResource Chip}" ToolTip="{Binding CoreText}">
+              <TextBlock Style="{StaticResource Mono}" Text="{Binding PlatformText}" />
+            </Border>
+            <Border x:Name="DriverChip" Style="{StaticResource Chip}">
+              <TextBlock Style="{StaticResource Mono}" Text="{Binding DriverText}" />
+            </Border>
+            <Border x:Name="ElevChip" Style="{StaticResource Chip}" Margin="0">
+              <TextBlock Style="{StaticResource Mono}" Text="{Binding ElevationText}" />
+            </Border>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- 全局状态条 -->
+      <Border x:Name="Banner" Grid.Row="1" Margin="24,16,24,0" CornerRadius="8"
+              BorderThickness="1" Padding="14,10" Visibility="Collapsed">
+        <Grid>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock x:Name="BannerText" Style="{StaticResource Body}" VerticalAlignment="Center" />
+          </StackPanel>
+          <Button x:Name="BannerAction" Content="查看诊断" HorizontalAlignment="Right"
+                  Style="{StaticResource GhostButton}" Height="28" Click="BannerAction_Click" />
+        </Grid>
+      </Border>
+
+      <!-- 内容 -->
+      <ContentControl x:Name="Host" Grid.Row="2" Margin="24,16,24,8" />
+
+      <!-- 底栏 -->
+      <Border Grid.Row="3" Background="{StaticResource BgSurface}"
+              BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0">
+        <Grid Margin="24,0">
+          <TextBlock Style="{StaticResource Mono}" VerticalAlignment="Center" Foreground="{StaticResource TextTertiary}">
+            <Run Text="采样 " />
+            <Run Text="{Binding Settings.IntervalMs, Mode=OneWay}" />
+            <Run Text="ms · 档位 " />
+            <Run Text="{Binding ProfileLabel, Mode=OneWay}" />
+            <Run Text=" · 天花板 " />
+            <Run Text="{Binding CeilingText, Mode=OneWay}" />
+            <Run Text=" · " /><Run Text="{Binding FooterMode, Mode=OneWay}" /><Run Text="（MSR 0x610）" />
+          </TextBlock>
+          <TextBlock Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                     Foreground="{StaticResource TextTertiary}">
+            <Run Text="数据来自本机真实传感器 · MSR 写入需管理员与设置页授权" />
+          </TextBlock>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

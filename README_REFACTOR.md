@@ -9,7 +9,7 @@
 | 项目 | 当前事实 |
 | :--- | :--- |
 | 分支模型 | **是决策树模型**。`ThermalDecisionEngine` 五节点短路求值，每拍由 `SessionState` 调用，不是死代码 |
-| MSR 写入 | **可写**。`ThermalPilot.App` 固定 `LibreHardwareMonitorLib 0.9.4`（WinRing0 驱动），`Ring0.ReadMsr/WriteMsr` 可用 |
+| MSR 写入 | **可写**。`ThermalTuner.App` 固定 `LibreHardwareMonitorLib 0.9.4`（WinRing0 驱动），`Ring0.ReadMsr/WriteMsr` 可用 |
 | 真实写入目标 | `0x610` PL1 / PL2 / Tau；`0x774` EPP、`0x1AD` 睿频倍率也可写；`0x150` 电压偏移未接入 |
 | 不控制 | 风扇 / EC / PWM / 电源计划 / 电压 / 倍频。风扇由 EC 按温度曲线自动调速 |
 | 默认闸门 | 决策树每拍在跑，但 `TryAutoApply` 需过 `_manualLock` + `AllowRealWrite` + `AutoTakeover`；已保存手动微调会锁住自动接管 |
@@ -117,22 +117,22 @@ HardwareProbe（探测） → HardwareLimitResolver（推导） → HardwareLimi
 
 ```bash
 dotnet build ThermalTuner.sln                         # 构建（0 warning / 0 error）
-dotnet run --project src/ThermalPilot.Runner          # 环境报告 + 单测 + 模拟回路
-dotnet run --project tests/ThermalPilot.Core.Tests    # 仅单测
-dotnet run --project src/ThermalPilot.App             # 启动 WPF 界面
+dotnet run --project src/ThermalTuner.Runner          # 环境报告 + 单测 + 模拟回路
+dotnet run --project tests/ThermalTuner.Core.Tests    # 仅单测
+dotnet run --project src/ThermalTuner.App             # 启动 WPF 界面
 ```
 
 ### 实时监控
 
 ```bash
-dotnet run --project src/ThermalPilot.Monitor -- --simulate --stress --seconds 60
-ThermalPilot.Monitor.exe --seconds 120
-ThermalPilot.Monitor.exe --diag
+dotnet run --project src/ThermalTuner.Monitor -- --simulate --stress --seconds 60
+ThermalTuner.Monitor.exe --seconds 120
+ThermalTuner.Monitor.exe --diag
 ```
 
 参数：`--profile silent|balanced|performance`、`--interval ms`、`--out FILE`。
 
-> **驱动口径（已统一）**：主程序 `ThermalPilot.App` 与诊断工具 `ThermalPilot.Monitor` 均固定
+> **驱动口径（已统一）**：主程序 `ThermalTuner.App` 与诊断工具 `ThermalTuner.Monitor` 均固定
 > LHM **0.9.4 / WinRing0**，旧「安装 PawnIO 签名驱动」提示已从 Monitor 中移除。
 > WinRing0 属老式内核驱动，可能被 Defender / HVCI 内存完整性拦截；本机 HVCI 未开启，实测可加载。
 > 换机若 `--write-test` 失败，先查管理员权限与核心隔离设置，不要按 Monitor 的旧提示去装 PawnIO。
@@ -141,7 +141,7 @@ ThermalPilot.Monitor.exe --diag
 
 ## 7. 图形界面与 MSR 通道自检
 
-产品原型 `design/ThermalPilot-UI.html` 已落地为 `src/ThermalPilot.App`（net8.0-windows，纯 XAML + 自绘曲线）。
+产品原型 `design/ThermalTuner-UI.html` 已落地为 `src/ThermalTuner.App`（net8.0-windows，纯 XAML + 自绘曲线）。
 
 | 页面 | 现状 |
 | :--- | :--- |
@@ -208,10 +208,10 @@ pwsh -File build/publish.ps1 -Installer       # 追加安装包（需 Inno Setup
 | 产物 | 路径 |
 | :--- | :--- |
 | 构建输出 | `artifacts/app-win-x64/`（脚本默认输出，版本 `0.4.3`） |
-| 主程序（自包含目录版） | `dist/ThermalPilot/ThermalPilot.App.exe` |
-| 主程序压缩包 | `dist/ThermalPilot-win-x64.zip` |
-| 带全部自检命令的便携包 | `dist/ThermalPilot-Stress-v0.4.3.zip` |
-| 安装包脚本 | `build/installer/ThermalPilot.App.iss` |
+| 主程序（自包含目录版） | `dist/ThermalTuner/ThermalTuner.App.exe` |
+| 主程序压缩包 | `dist/ThermalTuner-win-x64.zip` |
+| 带全部自检命令的便携包 | `dist/ThermalTuner-Stress-v0.4.3.zip` |
+| 安装包脚本 | `build/installer/ThermalTuner.App.iss` |
 
 > `dist/` 已在 `.gitignore` 排除，不入库；未签名 exe 可能被 Defender 误报。
 > 需求、验收标准与实现状态见 [`docs/PRD.md`](docs/PRD.md)。
@@ -229,6 +229,6 @@ pwsh -File build/publish.ps1 -Installer       # 追加安装包（需 Inno Setup
 | `deliverables/智能调优生效性与压力测试验证-v0.4.0.md` | **已作废**（错误判定「本机不可写」），仅留作历史 |
 
 口径要点：固件 `0x610` / `0x774` / `0x1AD` 里的值是**出厂默认，掉电即恢复，不可持久化修改**；
-可持久化的是软件侧实测标定值 + 手动微调值，存 `%LOCALAPPDATA%\ThermalPilot\settings.json`，
+可持久化的是软件侧实测标定值 + 手动微调值，存 `%LOCALAPPDATA%\ThermalTuner\settings.json`，
 开机由软件重放写入寄存器；软件不运行、未提权、未开写入开关时，CPU 按固件默认散热逻辑运转。
 标定值可能高于固件值，属正常优化，不简单判为拟合误差。
