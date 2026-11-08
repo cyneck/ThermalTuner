@@ -27,7 +27,6 @@ public partial class SettingsPage : UserControl
         if (Session is not { } s) return;
 
         _loading = true;
-        TakeoverBox.IsChecked = s.Settings.AutoTakeover;
         RestoreBox.IsChecked = s.Settings.RestoreOnExit;
         TrayBox.IsChecked = s.Settings.CloseToTray;
         RealWriteBox.IsChecked = s.Settings.AllowRealWrite;
@@ -105,7 +104,7 @@ public partial class SettingsPage : UserControl
     {
         if (_loading || Session is not { } s) return;
 
-        s.SetAutoTakeover(TakeoverBox.IsChecked == true);
+        // 持续动态微调已迁到「智能微调」页档位卡，本页不再重复写它
         s.Settings.RestoreOnExit = RestoreBox.IsChecked == true;
         s.Settings.CloseToTray = TrayBox.IsChecked == true;
         s.SetReplayOnStartup(ReplayBox.IsChecked == true);

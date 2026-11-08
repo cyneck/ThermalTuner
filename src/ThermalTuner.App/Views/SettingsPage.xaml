@@ -43,9 +43,8 @@
 
           <Border Style="{StaticResource Divider}" Margin="0,14,0,0" />
 
-          <CheckBox x:Name="TakeoverBox" Content="智能模式下持续动态微调"
-                    Style="{StaticResource Switch}" Margin="0,12,0,0" Click="Toggle_Click"
-                    ToolTip="关闭后，选中档位仍立即写入一次，只是决策树不再每秒改动功耗上限。" />
+          <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap"
+                     Text="「选中之后要不要持续自动修正」不在这里：它和档位是同一件事的两步，已放在「智能微调」页的档位卡内。" />
           <CheckBox x:Name="RestoreBox" Content="退出程序时恢复寄存器原值"
                     Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click"
                     ToolTip="退出前把本次改过的功耗、能效、睿频与电压项写回启动备份；本机不可写的项自动跳过，并在事件中心说明。" />

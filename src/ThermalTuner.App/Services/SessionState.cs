@@ -1201,6 +1201,27 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     /// <summary>动态自动通道（决策树每拍）是否允许写；选中档位 / 手工保存不受它约束。</summary>
     public bool AutoApplyAllowed => !IsManualMode && WriteGatesOpen && Settings.AutoTakeover;
 
+    /// <summary>
+    /// 「之后持续动态微调」开关的唯一数据源：开关就放在智能微调页的档位卡里，
+    /// 与档位同屏，用户不用跨页推理「点了档位之后还会不会自己动」。
+    /// </summary>
+    public bool AutoTakeoverOn => Settings.AutoTakeover;
+
+    /// <summary>手工模式下档位只演算，这个开关没有作用对象，置灰并给常驻原因。</summary>
+    public bool AutoTakeoverToggleEnabled => IsIntelligentMode;
+
+    /// <summary>
+    /// 档位卡下方「之后会怎样」的常驻说明（四态）：
+    /// 手工模式 / 当前不可写 / 已开启 / 已关闭。置灰与关闭都必须有文字，不能只靠 ToolTip。
+    /// </summary>
+    public string AutoTakeoverHintText => IsManualMode
+        ? "手工微调模式下档位只演算，自动修正不参与；实际写入在「手工微调」页保存并下发。"
+        : !WriteGatesOpen
+            ? $"当前不可写（{GateReason}）：开关状态会记住，但要有写入授权后才会自动修正。"
+            : Settings.AutoTakeover
+                ? "开启：每秒按 1W 小步修正，连续 3 拍同向才动，升档前有冷却；高温只降不升。"
+                : "关闭：只保留选中档位那一次下发，之后不再自动改动功耗上限。";
+
     public bool IsIntelligentMode => !IsManualMode;
     public bool IsManualModePublic => IsManualMode;
     public string TuningModeText => IsManualMode ? "手工微调" : "智能微调";
@@ -1564,6 +1585,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         Settings.AutoTakeover = on;
         SettingsStore.Save(Settings);
         N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(AutoTakeoverOn)); N(nameof(AutoTakeoverHintText)); N(nameof(AutoTakeoverToggleEnabled));
         N(nameof(MonitorHintText)); N(nameof(ModeStatusText)); N(nameof(FooterMode));
         AddAlert("info", on ? "持续动态微调已开启" : "持续动态微调已关闭",
             on ? "决策树按 1W 台阶 + 3 拍迟滞 + 升档冷却低频下发；选中档位仍立即下发。"
@@ -1588,6 +1610,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         N(nameof(IsManualModePublic)); N(nameof(IsIntelligentMode));
         N(nameof(TuningModeText)); N(nameof(ModeStatusText)); N(nameof(FooterMode));
         N(nameof(MonitorHintText)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(AutoTakeoverOn)); N(nameof(AutoTakeoverHintText)); N(nameof(AutoTakeoverToggleEnabled));
         N(nameof(CooldownText));
         N(nameof(ProfileCardTitle)); N(nameof(ProfileCardHint));
         N(nameof(CalibrationGateHint)); N(nameof(CalibrationGateVisibility));
@@ -1601,6 +1624,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
     public void SetAllowRealWrite(bool on)
     {
+        // 关闭写入授权时，持续动态微调失去作用对象，必须同时关掉；
+        // 但这是一次隐式联动，必须在事件中心说明，否则用户看到开关自己变了会以为是 bug。
+        bool droppedTakeover = !on && Settings.AutoTakeover;
         Settings.AllowRealWrite = on;
         if (!on) Settings.AutoTakeover = false;
         SettingsStore.Save(Settings);
@@ -1608,8 +1634,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         N(nameof(MsrSummary));
         N(nameof(MonitorHintText)); N(nameof(ModeStatusText)); N(nameof(GateReason));
         N(nameof(FooterMode)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(AutoTakeoverOn)); N(nameof(AutoTakeoverHintText)); N(nameof(AutoTakeoverToggleEnabled));
         N(nameof(ProfileCardTitle)); N(nameof(ProfileCardHint));
         N(nameof(CalibrationGateHint)); N(nameof(CalibrationGateVisibility));
+        if (droppedTakeover)
+            AddAlert("info", "持续动态微调已同时关闭",
+                "写入授权关闭后不会再改硬件，持续修正随之停止；重新授权后可在「智能微调」页档位卡里再次开启。");
     }
 
     /// <summary>真实写入；未授权或通道不可写时直接拒绝（不静默降级成演练）。</summary>

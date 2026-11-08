@@ -14,11 +14,30 @@ public partial class TuningPage : UserControl
     public TuningPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => Attach();
+        Loaded += (_, _) => { Attach(); SyncTakeover(); };
+        // 截图与冒烟自检走离屏渲染，不触发 Loaded；DataContext 落地时补一次同步
+        DataContextChanged += (_, _) => SyncTakeover();
         Unloaded += (_, _) => Detach();
     }
 
     private SessionState? Session => DataContext as SessionState;
+
+    /// <summary>开关不是绑定控件：进入页面、点击之后都以 SessionState 为准回读一次。</summary>
+    private void SyncTakeover()
+    {
+        if (Session is { } s) TakeoverBox.IsChecked = s.AutoTakeoverOn;
+    }
+
+    /// <summary>
+    /// 档位卡内的「之后持续动态微调」：只管决策树每拍是否继续修正，
+    /// 与「选中即下发一次」互不影响，所以放在档位旁边而不是设置页。
+    /// </summary>
+    private void Takeover_Click(object sender, RoutedEventArgs e)
+    {
+        if (Session is not { } s) return;
+        s.SetAutoTakeover(TakeoverBox.IsChecked == true);
+        SyncTakeover();
+    }
 
     private void Attach()
     {

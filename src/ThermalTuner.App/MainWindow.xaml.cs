@@ -74,7 +74,8 @@ public partial class MainWindow : Window
             if (ok == true && adopted)
             {
                 _session.SetProfile(wizard.RecommendedProfile);
-                _session.Settings.AutoTakeover = true;
+                // 「之后持续动态微调」由向导末步的复选框决定（Finish 已写入 settings），
+                // 这里不再强行置 true——否则用户在向导里取消勾选会被静默覆盖。
                 SettingsStore.Save(_session.Settings);
             }
             SettingsStore.Save(_session.Settings);

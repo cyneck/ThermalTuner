@@ -171,11 +171,11 @@
           </UniformGrid>
 
           <CheckBox x:Name="AutoBox" Style="{StaticResource Switch}" Margin="0,18,0,0" IsChecked="True"
-                    Content="验证通过后自动接管功耗参数（不再每次询问）" />
+                    Content="选中档位后，由程序持续自动修正功耗上限" />
 
           <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,12,0,0">
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="自动接管只在你确认后生效，随时可在设置页关闭。写入硬件还需要管理员权限与设置页的写入授权。" />
+                       Text="取消勾选也能用：点选档位仍会立即下发一次，只是之后不再自动修正。该选项随时可在「智能微调」页的档位卡里改。写入硬件还需要管理员权限与设置页的写入授权。" />
           </Border>
         </StackPanel>
       </Border>
