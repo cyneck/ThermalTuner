@@ -9,7 +9,7 @@ param(
     [switch]$SelfContained,
     [switch]$Installer,
     [string]$Configuration = "Release",
-    [string]$Version = "0.4.3"
+    [string]$Version = "0.5.1"
 )
 
 $ErrorActionPreference = "Stop"

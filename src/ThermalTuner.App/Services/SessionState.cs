@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Security.Principal;
 using System.Text;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ThermalTuner.Core;
 using ThermalTuner.Core.Environment;
@@ -20,6 +21,20 @@ public sealed record AlertRow(string Time, string Level, string Title, string De
 
 public sealed record SampleRow(
     string Time, string Temp, string Load, string Power, string Pl1, string Rule, string Fan = "--");
+
+/// <summary>
+/// 档位选中前的下发计划（v0.5.0）。纯计算结果，供 UI 二次确认展示，
+/// 不写寄存器、不改档位；确认后再调 ApplyProfile 执行。
+/// </summary>
+public sealed record ProfileApplyPlan(
+    string Profile, string ProfileLabel, double CeilingC,
+    double CurrentTempC, double TargetPl1W, double TargetPl2W, double TargetTauS,
+    double DeltaW, bool GatesOpen, string GateReason,
+    bool NeedConfirmation, string ConfirmReason, bool HardBlocked,
+    double CooldownRemainingS, bool LeaveManualMode, bool HasSavedManual);
+
+/// <summary>一次下发的结果。Ok=true 仅代表「寄存器写入 + 回读校验成功」，不代表性能已收敛。</summary>
+public sealed record WriteOutcome(bool Ok, string Message, int StepPl1W, bool Confirmed = false);
 
 /// <summary>界面状态分级，驱动顶部状态条与侧栏角标。</summary>
 public enum StatusLevel { Ok, Info, Warn, Danger }
@@ -53,11 +68,17 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private readonly AutoCpuController _controller;
     private readonly Dictionary<string, DateTime> _alertDebounce = new();
     private MsrGuard? _guard;
-    private DateTime _lastAutoWrite = DateTime.MinValue;
-    private double _lastAppliedPl1001;
     private int _autoWriteFailures;
-    /// <summary>存在手动微调值时，决策树不得自动写寄存器覆盖用户的优化结果。</summary>
-    private bool _manualLock;
+    private string _lastWriteText = "本次会话尚未下发任何写入";
+    private WriteScheduler _scheduler = null!;
+    private readonly ThermalEventRecorder _thermalEvents = new();
+
+    /// <summary>
+    /// v0.5.0：模式不再由「是否存在 L3 手动值」隐式推导（旧版 _manualLock 会静默锁死智能档位）。
+    /// 单一真值源就是 Settings.TuningMode；手工模式下决策树只演算、不写寄存器。
+    /// </summary>
+    private bool IsManualMode =>
+        string.Equals(Settings.TuningMode, TuningModes.Manual, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>固件实际 PL1（0x610 读出）；0 表示读不到。</summary>
     private double _firmwarePl1W;
@@ -70,8 +91,35 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private int _appliedVoltageMv;
     private readonly List<RawSample> _raw = new();
 
+    // 统一时序图：概览页的唯一监控数据源。各序列索引对齐，不可用写 NaN。
+    private readonly MetricSeries _sTemp = new("temp", "温度", "°C", C("#B0453C"), 2.2,
+        tooltip: "CPU 封装温度实测；右上角显示温度天花板标注");
+    private readonly MetricSeries _sPl1 = new("pl1", "决策 PL1", "W", C("#185FA5"), 1.4, dashed: true,
+        tooltip: "决策树演算目标（非寄存器实值）");
+    private readonly MetricSeries _sPower = new("power", "包功耗", "W", C("#A9702A"), 2.0,
+        tooltip: "RAPL 包功耗实测");
+    private readonly MetricSeries _sCpu = new("cpu", "CPU 负载", "%", C("#534AB7"), 1.4,
+        fixedMin: 0, fixedMax: 100, format: "F0",
+        tooltip: "Windows 系统计时 · CPU 时间占比 0~100%（与任务管理器同口径）");
+    private readonly MetricSeries _sGpu = new("gpu", "GPU 负载", "%", C("#639922"), 1.4,
+        fixedMin: 0, fixedMax: 100, format: "F0",
+        tooltip: "NVAPI / D3D · GPU Core 活动率（与任务管理器 GPU Engine 引擎利用率口径不同）");
+    private readonly MetricSeries _sGpuMem = new("gpumem", "GPU 显存", "%", C("#888780"), 1.4,
+        fixedMin: 0, fixedMax: 100, format: "F0",
+        tooltip: "独显专用显存 Used/Total（不含任务管理器计入的共享显存）");
+    private readonly MetricSeries _sFan = new("fan", "风扇档位", "%", C("#0F6E56"), 2.6,
+        fixedMin: 0, fixedMax: 100, format: "F0",
+        tooltip: "EC 只读档位刻度（非物理转速 RPM）；原始值连续不变时标注「疑似非实时」；软件不写 EC/PWM");
+    private MetricSeries? _sFanRpm;
+    public ObservableCollection<MetricSeries> Metrics { get; } = new();
+
+    // 风扇读数「疑似非实时」时用警示色，其余用弱化色；纯 UI 状态，freeze 后可跨线程绑定。
+    private static readonly Brush FanWarnBrush = C("#A9702A");
+    private static readonly Brush FanMutedBrush = C("#8C9A95");
+
     private readonly record struct RawSample(
-        DateTime At, double Temp, double Load, double Power, double Pl1, string Rule, double FanPct);
+        DateTime At, double Temp, double Load, double Power, double Pl1, string Rule,
+        double FanPct, double FanRaw);
 
     private StressLoad? _stress;
     private int _stressThreads = -1;
@@ -100,9 +148,13 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public SessionState()
     {
         Settings = SettingsStore.Load();
+        ResolveTuningMode();
         Environment = HardwareProbe.Probe();
         CpuCaps = ThermalTuner.Core.Taxonomy.CpuCapability.Probe(Environment.BrandString);
         _controller = new AutoCpuController(HardwareLimitResolver.Resolve(Environment));
+        _scheduler = new WriteScheduler(
+            _controller.Limits.MinPL1, _controller.Limits.MaxPL1,
+            Settings.RampUpCooldownSeconds);
         LoadPersistedCalibration();
         IsElevated = CheckElevated();
         // 档位与天花板必须一起从持久化设置恢复。此前只恢复了 CeilingC，
@@ -112,12 +164,32 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         Profile = saved is "silent" or "performance" ? saved : "balanced";
         CeilingC = Math.Min(Settings.CeilingC, Limits.MaxSafeCeiling);
         InitMsr();
+        InitMetrics();
 
         _timer.Interval = TimeSpan.FromMilliseconds(Settings.IntervalMs);
         _timer.Tick += (_, _) => Tick();
         // 首次安装启动 + 每次启动都刷新一次只读能力快照：
         // 提权重启后寄存器可读性会变，禁用清单必须跟着更新，不能沿用旧快照。
         InitializeEnvironmentCheck();
+    }
+
+    /// <summary>
+    /// 存量配置迁移（v0.5.0）：旧版 settings.json 没有 TuningMode 字段。
+    /// 有 L3 手动值 → manual（保持旧行为：重放手动值、决策树不接管），无值 → intelligent。
+    /// 只在内存归一，不在这里落盘：离屏截图 / 冒烟自检构造会话时不能写 settings.json。
+    /// 用户切档位、改设置或正常退出时自然会保存。
+    /// </summary>
+    private void ResolveTuningMode()
+    {
+        bool missing = string.IsNullOrWhiteSpace(Settings.TuningMode);
+        Settings.TuningMode = missing
+            ? (Settings.Manual is not null ? TuningModes.Manual : TuningModes.Intelligent)
+            : TuningModes.Normalize(Settings.TuningMode);
+
+        if (Settings.RampUpCooldownSeconds <= 0)
+            Settings.RampUpCooldownSeconds = WriteScheduler.DefaultCooldownSeconds;
+        Settings.RampUpCooldownSeconds = Math.Clamp(Settings.RampUpCooldownSeconds,
+            WriteScheduler.MinCooldownSeconds, WriteScheduler.MaxCooldownSeconds);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -226,25 +298,30 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>EPP 是否可编辑：0x774 读不到时禁用，避免把决策默认值当成用户微调值保存。</summary>
+    /// <summary>EPP 是否可编辑：0x774 在本后端完全不可访问时禁用，避免把决策默认值当成用户微调值保存。</summary>
     public bool EppEditable => !double.IsNaN(_fwEpp);
     public string EppHintText => EppEditable
         ? string.Empty
-        : "当前通道读不到 0x774：EPP 微调已禁用，PL1 / PL2 / Tau 不受影响。";
+        : "当前后端（PawnIO IntelMSR）的读白名单不含 0x774：EPP / HWP 微调在本机不可用，" +
+          "PL1 / PL2 / Tau 不受影响。";
 
-    // ---- 睿频倍率（MSR 0x1AD）：0x1AD 读不到时禁用编辑，绝不拿决策值冒充用户微调值 ----
-    public bool TurboEditable => _fwTurbo is not null;
+    // ---- 睿频倍率（MSR 0x1AD）：读得到 ≠ 写得了，两者都要满足才允许编辑 ----
+    public bool TurboEditable => _fwTurbo is not null && (_guard?.TurboWritable ?? false);
     public string FwTurboText => _fwTurbo is { } t ? TurboRatioLimit.ShortTiers(t) : "--";
     public int FwTurboAllCoreRatio => _fwTurbo?.AllCore ?? 0;
     public int FwTurboMaxRatio => _fwTurbo?.MaxTier ?? 0;
     public string TurboRangeText => _fwTurbo is { } t
         ? $"[{TurboRatioLimit.MinRatio}, {t.MaxTier}] ×100MHz"
         : "--（0x1AD 不可读）";
-    public string TurboHintText => _fwTurbo is { } t
-        ? $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz；" +
-          $"允许在 [8, {t.MaxTier}] 内做规格内档位配置（不做超频）。" +
-          "本机 A/B 实测：拉平到 38x 后全核频率无提升，仅增加功耗与温度，不作为性能卖点。"
-        : "当前通道读不到 0x1AD：睿频倍率调节已禁用。";
+    public string TurboHintText => _fwTurbo is not { } t
+        ? "当前通道读不到 0x1AD：睿频倍率调节已禁用。"
+        : _guard?.TurboWritable != true
+            ? $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz（只读）。" +
+              "当前后端（PawnIO IntelMSR）的写白名单不含 0x1AD，本机不支持改写睿频倍率表；" +
+              "功耗与温度控制不受影响。"
+            : $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz；" +
+              $"允许在 [8, {t.MaxTier}] 内做规格内档位配置（不做超频）。" +
+              "本机 A/B 实测：拉平到 38x 后全核频率无提升，仅增加功耗与温度，不作为性能卖点。";
 
     // 供编辑页做基线对比；NaN = MSR 读不到，退回决策值
     public double FwPl1W => _fwLimits?.Pl1W ?? double.NaN;
@@ -476,6 +553,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             _powerFromDriver = value;
             N(nameof(PowerFromDriver));
             N(nameof(PowerCaption));
+            N(nameof(PowerSourceText));
             N(nameof(CanCalibrate));
             N(nameof(CalibrationBlockedReason));
         }
@@ -485,10 +563,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public string PowerSource
     {
         get => _powerSource;
-        private set { _powerSource = value; N(nameof(PowerSource)); N(nameof(PowerCaption)); }
+        private set { _powerSource = value; N(nameof(PowerSource)); N(nameof(PowerCaption)); N(nameof(PowerSourceText)); }
     }
 
     public string PowerCaption => _powerFromDriver ? $"包功耗（实测 {_powerSource}）" : "包功耗（估算）";
+    /// <summary>包功耗卡副标题：只交代功耗来源，不再错绑 GPU 说明。</summary>
+    public string PowerSourceText => _powerFromDriver ? $"实测 · {_powerSource}" : "按负载估算 · 非实测";
     public string PowerText => _powerW <= 0 ? "N/A" : _powerW.ToString("F0");
 
     private double _clockGhz;
@@ -549,35 +629,100 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private double _fanMeasuredPct = double.NaN;
     private string _fanSource = string.Empty;
     private double _fanRawValue = double.NaN;
+    private int _fanStagnantReads;
+    private bool _fanStagnant;
     private string _gpuName = string.Empty;
     private string _gpuSource = string.Empty;
+    private double _lhmCpuTotal = double.NaN;   // 诊断对照，不进界面数值/决策树
+    private double _gpuTempC = double.NaN;
 
     public string CpuLoadText => $"{LoadPct:F0}%";
+    private string LhmCpuTotalText => double.IsNaN(_lhmCpuTotal) ? "N/A" : $"{_lhmCpuTotal:F0}%";
+
+    /// <summary>CPU 卡 ToolTip：交代系统计时口径、任务管理器两个数字的来历、为何弃用 LHM CPU Total。</summary>
+    public string CpuLoadHintText =>
+        "CPU 负载 = Windows 系统计时（GetSystemTimes）差分：总时间中非空闲占比，按全部逻辑核汇总后落在 0~100%，与任务管理器同一数据源。\n" +
+        "任务管理器「利用率」用频率加权的 % Processor Utility，轻载睿频时会略高于本值；「速度」= 基准频率 × % Processor Performance，是瞬时有效频率，不代表满载。\n" +
+        $"LHM CPU Total（线程级估算，当前 {LhmCpuTotalText}）只作诊断对照：它随两次 Update 的窗口跳动，实测同一进程内可相差数倍，曾造成「高负载 + 低功耗 + 低温」的自相矛盾判断，故不进界面与决策树。";
+
     public string GpuLoadText => double.IsNaN(_gpuLoadPct) ? "N/A" : $"{_gpuLoadPct:F0}%";
     public string GpuMemoryText => double.IsNaN(_gpuMemPct) ? "N/A" : $"{_gpuMemPct:F0}%";
     public string GpuMemoryDetailText =>
         double.IsNaN(_gpuMemUsedMb) || double.IsNaN(_gpuMemTotalMb)
-            ? "容量不可用"
-            : $"{_gpuMemUsedMb:F0} / {_gpuMemTotalMb:F0} MB";
+            ? "专用显存容量不可用"
+            : $"专用显存 {_gpuMemUsedMb:F0} / {_gpuMemTotalMb:F0} MB";
+
+    /// <summary>显存卡 ToolTip：与任务管理器的「专用 / 共享 / 合计」三种口径对齐说明。</summary>
+    public string GpuMemoryHintText =>
+        "本卡按独显专用显存 Used/Total 计算，对应任务管理器的「专用 GPU 内存」。\n" +
+        "任务管理器「GPU 内存」= 专用显存 + 共享显存（后者由系统内存映射），分母不同，百分比不可直接对比；共享显存不由本工具采集。\n" +
+        "N/A 表示来源不可用，不用演算值冒充。";
+
+    /// <summary>GPU 负载卡副标题：温度 + 口径标签，显卡全名放 ToolTip。</summary>
+    public string GpuCardSubtitleText
+    {
+        get
+        {
+            string t = double.IsNaN(_gpuTempC) ? "温度 N/A" : $"GPU Core {_gpuTempC:F0}°C";
+            string src = string.IsNullOrEmpty(_gpuSource) ? "来源不可用"
+                : _gpuSource.Contains("NVAPI") ? "NVAPI 口径" : "D3D 口径";
+            return $"{t} · {src}";
+        }
+    }
     /// <summary>风扇实测值；与决策树的「演算建议值（未下发）」严格区分。</summary>
     public string FanMeasuredText => !double.IsNaN(_fanRpm) ? $"{_fanRpm:F0} RPM"
         : !double.IsNaN(_fanMeasuredPct) ? $"{_fanMeasuredPct:F0}%" : "N/A";
-    public string FanMeasuredHintText =>
-        !double.IsNaN(_fanRpm) || !double.IsNaN(_fanMeasuredPct)
-            ? (string.IsNullOrEmpty(_fanSource) ? "只读" : _fanSource)
-            : "无可用风扇读数";
-    /// <summary>风扇指标 ToolTip：交代原始 EC 值与换算，不占界面行数。</summary>
-    public string FanDetailText =>
-        double.IsNaN(_fanMeasuredPct) && double.IsNaN(_fanRpm)
-            ? "本机 LHM 与 NBFC/EC 均不可读；不拿决策树的演算建议值冒充实测。"
-            : !double.IsNaN(_fanRawValue)
-                ? $"EC 原始值 {_fanRawValue:F0}，按生效配置 Min/Max 换算为运行百分比；只读采集，软件不写 EC。"
-                : "由 NBFC 服务按生效配置读 EC 换算；只读采集，软件不写 EC/PWM。";
+
+    /// <summary>EC 原始字节；读不到显示破折号，绝不拿换算后的百分比倒推。</summary>
+    public string FanRawText => double.IsNaN(_fanRawValue) ? "—" : _fanRawValue.ToString("F0");
+
+    /// <summary>
+    /// 风扇卡副标题：给出恒定检测结果。连续多次真实采样原始值不变时明确标注
+    /// 「疑似非实时」，避免把恒定档位刻度误读成实时转速。
+    /// </summary>
+    public string FanMeasuredHintText
+    {
+        get
+        {
+            bool has = !double.IsNaN(_fanRpm) || !double.IsNaN(_fanMeasuredPct);
+            if (!has) return "无可用风扇读数 · 非 RPM";
+            if (_fanStagnant)
+                return $"疑似非实时（连续 {_fanStagnantReads} 次不变）· 非 RPM";
+            return (string.IsNullOrEmpty(_fanSource) ? "只读" : _fanSource) + " · 非 RPM";
+        }
+    }
+
+    /// <summary>恒定警示态用 Warn 色，其余用弱化色。</summary>
+    public Brush FanHintBrush => _fanStagnant ? FanWarnBrush : FanMutedBrush;
+
+    /// <summary>风扇指标 ToolTip：交代原始 EC 值、换算与实时性判定，不占界面行数。</summary>
+    public string FanDetailText
+    {
+        get
+        {
+            if (double.IsNaN(_fanMeasuredPct) && double.IsNaN(_fanRpm))
+                return "本机 LHM 与内置 EC / NBFC 均不可读；不拿决策树的演算建议值冒充实测。";
+
+            string head = !double.IsNaN(_fanRawValue)
+                ? $"EC 原始值 {_fanRawValue:F0} → 档位 {_fanMeasuredPct:F1}%（按生效配置 Min/Max 线性换算并钳到 0~100）。"
+                : "来源：NBFC 服务按生效配置换算的档位百分比（未取得原始字节）。";
+            string stability = _fanStagnant
+                ? $"连续 {_fanStagnantReads} 次真实采样（约每 2.2 秒一次）原始值完全不变：疑似非实时读数，不能据此判断风扇是否在转。"
+                : "原始值逐拍采集（约每 2.2 秒一次）；尚未触发恒定判定。";
+            return head + "\n" + stability +
+                   "\n本机无物理转速 RPM 传感器；该值是 EC 档位刻度，软件只读 EC，从不写 EC/PWM。";
+        }
+    }
     public string GpuSourceText => string.IsNullOrEmpty(_gpuSource) ? "未检测到 GPU" : _gpuSource;
     public string GpuNameText => string.IsNullOrEmpty(_gpuName) ? "未检测到 GPU" : _gpuName;
     public string GpuHintText =>
-        $"{GpuNameText} · {GpuSourceText}；风扇读数来自 LHM 或 NBFC/EC 只读采集，软件不写 EC/PWM。" +
-        "N/A 表示两种来源都不可用，不用演算值冒充。";
+        $"{GpuNameText} · {GpuSourceText}\n" +
+        "GPU 负载：LHM 走 NVIDIA NVAPI 的 GPU Core 活动率（整卡核心，核显回退 D3D 引擎峰值）。\n" +
+        "这是本工具的主指标：与 GPU 温度 / 功耗同源于硬件传感器、跨厂商统一，最贴近散热与功耗判断。\n" +
+        "任务管理器「利用率」取 PDH GPU Engine 分引擎、分进程利用率（本机一次枚举 318 个实例，按引擎聚合），\n" +
+        "口径不同，数值不必逐拍一致；分引擎满载也可能几乎不耗电，不适合作为热策略的输入。\n" +
+        "GPU 温度：LHM 的 GPU Core 温度传感器；显存占用按专用显存 Used/Total 计算，不含共享显存。\n" +
+        "N/A 表示来源都不可用，不用演算值冒充。";
 
     private double _rth = double.NaN;
     public double Rth
@@ -783,9 +928,14 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public double CeilingC
     {
         get => _ceilingC;
-        private set { _ceilingC = value; N(nameof(CeilingC)); N(nameof(CeilingText)); }
+        private set
+        {
+            _ceilingC = value;
+            N(nameof(CeilingC)); N(nameof(CeilingText)); N(nameof(ThresholdLabelText));
+        }
     }
     public string CeilingText => $"{_ceilingC:F0}°C";
+    public string ThresholdLabelText => $"天花板 {CeilingText}";
 
     // ---------------- 环境状态条 ----------------
 
@@ -822,6 +972,62 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public ObservableCollection<AlertRow> Alerts { get; } = new();
     public ObservableCollection<SampleRow> Samples { get; } = new();
 
+    /// <summary>统一时序图的时间窗说明；采样间隔可调，不写死 5 分钟。</summary>
+    public string HistoryCaptionText =>
+        $"最近 {TempHistory.Count * Settings.IntervalMs / 1000.0:F0} 秒 · " +
+        $"采样 {1000.0 / Math.Max(1, Settings.IntervalMs):0.#} Hz · {TempHistory.Count} 点";
+    public string HistoryStartText => $"-{TempHistory.Count * Settings.IntervalMs / 1000.0:F0} s";
+
+    /// <summary>
+    /// 注册统一图表序列。风扇只登记「只读实测」口径：
+    /// 决策树的演算建议值 TargetFanPercent 从不进入图表，也不冒充实测转速。
+    /// 本机 EC 寄存器只是档位刻度，不是 RPM；真实 RPM 可用时才懒加载第二条序列。
+    /// </summary>
+    private void InitMetrics()
+    {
+        Metrics.Add(_sTemp);
+        Metrics.Add(_sPl1);
+        Metrics.Add(_sPower);
+        Metrics.Add(_sCpu);
+        Metrics.Add(_sGpu);
+        Metrics.Add(_sGpuMem);
+        Metrics.Add(_sFan);
+    }
+
+    private static Brush C(string hex)
+    {
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        brush.Freeze();
+        return brush;
+    }
+
+    private void PushMetric(MetricSeries series, double value) => series.Push(value, HistoryCap);
+
+    private void EnsureFanRpmSeries()
+    {
+        if (_sFanRpm is not null) return;
+        _sFanRpm = new MetricSeries("fanrpm", "风扇转速", "RPM", C("#D4537E"), 1.6,
+            format: "F0", tooltip: "LHM 风扇转速传感器实测（本机无此传感器）");
+        Metrics.Add(_sFanRpm);
+    }
+
+    /// <summary>UI 截图演示数据入口：只填历史点，不写寄存器、不触发决策。</summary>
+    public void AppendDemoHistory(double temp, double pl1, double power)
+    {
+        Push(TempHistory, temp, HistoryCap);
+        Push(Pl1History, pl1, HistoryCap);
+        Push(PowerHistory, power, HistoryCap);
+        PushMetric(_sTemp, temp);
+        PushMetric(_sPl1, pl1);
+        PushMetric(_sPower, power);
+        PushMetric(_sCpu, Math.Clamp(20 + power, 0, 100));
+        PushMetric(_sGpu, double.NaN);
+        PushMetric(_sGpuMem, double.NaN);
+        PushMetric(_sFan, Math.Clamp(50 + power * 0.4, 0, 100));
+        N(nameof(HistoryCaptionText));
+        N(nameof(HistoryStartText));
+    }
+
     private int _alertCount;
     public int AlertCount
     {
@@ -838,21 +1044,49 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public bool RealWriteEnabled => Settings.AllowRealWrite && MsrWritable;
     public bool HasMsrBackup => _guard?.StartupBackup is not null;
 
-    /// <summary>自动接管的四个闸门是否全开；false = 档位与决策只演算，不写寄存器。</summary>
-    public bool AutoApplyAllowed => !_manualLock && MsrWritable
-                                    && Settings.AllowRealWrite && Settings.AutoTakeover;
+    /// <summary>写入闸门：管理员 + WinRing0 通道可写 + 设置页显式授权。</summary>
+    public bool WriteGatesOpen => MsrWritable && Settings.AllowRealWrite && IsElevated;
 
-    /// <summary>底栏一行状态：当前到底会不会真写硬件（含 L3 手动锁与自动接管开关）。</summary>
-    public string FooterMode => AutoApplyAllowed ? "写入已授权" : "只读监控";
+    /// <summary>动态自动通道（决策树每拍）是否允许写；选中档位 / 手工保存不受它约束。</summary>
+    public bool AutoApplyAllowed => !IsManualMode && WriteGatesOpen && Settings.AutoTakeover;
+
+    public bool IsIntelligentMode => !IsManualMode;
+    public bool IsManualModePublic => IsManualMode;
+    public string TuningModeText => IsManualMode ? "手工微调" : "智能微调";
+    public string CooldownText => $"升档冷却 {Settings.RampUpCooldownSeconds:F0}s" +
+        (IsIntelligentMode ? $" · 剩余 {_scheduler.CooldownRemaining(DateTime.UtcNow):F0}s" : string.Empty);
+
+    /// <summary>最近一次真实下发结果（成功或跳过原因），不把演算值说成已下发。</summary>
+    public string LastWriteText => _lastWriteText;
+
+    /// <summary>概览页全局状态条：模式 + 是否真会写 + 具体原因，避免「点一下以为下发了」。</summary>
+    public string ModeStatusText => IsManualMode
+        ? $"手工微调模式 · 智能档位只演算，寄存器由「手工微调」页保存并下发 · {_lastWriteText}"
+        : !WriteGatesOpen
+            ? $"智能微调 · {ProfileLabel} · 只读演算（{GateReason}）· 选中档位会二次确认"
+            : $"智能微调 · {ProfileLabel} · 选中即下发 · " +
+              (Settings.AutoTakeover ? "决策树持续阶梯微调" : "决策树持续微调已关闭") +
+              $" · {CooldownText} · {_lastWriteText}";
+
+    /// <summary>底栏一行状态：明确模式与写入能力。</summary>
+    public string FooterMode => IsManualMode
+        ? "手工微调（智能档位只演算）"
+        : WriteGatesOpen ? (Settings.AutoTakeover ? "智能微调 · 已授权" : "智能微调 · 仅选中下发")
+                         : "智能微调 · 只读演算";
+
+    public string GateReason => IsElevated
+        ? (MsrWritable ? (Settings.AllowRealWrite ? "闸门已开" : "设置页未勾选「允许写入 MSR」")
+                       : $"MSR 通道不可写：{MsrStatusText}")
+        : "需要管理员权限";
 
     /// <summary>概览页写入链路说明：随真实闸门状态变化，不把「可写」说成「已在写」。</summary>
-    public string MonitorHintText => _manualLock
-        ? "已保存的手动微调（L3）优先：档位与决策只演算，不写寄存器。在「设置」清除保存的微调参数并开启自动接管后才会写入。"
-        : !RealWriteEnabled
-            ? "只读监控：决策值仅展示，未写入 MSR。写入需管理员 + 设置页「允许写入 MSR」；链路含启动备份 / 回读校验 / 退出恢复 / 开机重放。"
+    public string MonitorHintText => IsManualMode
+        ? "手工微调模式：智能档位与决策树只演算，不写寄存器。寄存器由「手工微调」页的「保存并下发」控制；切回智能档位会先二次确认。"
+        : !WriteGatesOpen
+            ? $"只读演算：选中档位会弹二次确认，但当前无法写硬件（{GateReason}）；链路含启动备份 / 回读校验 / 退出恢复 / 开机重放。"
             : !Settings.AutoTakeover
-                ? "自动接管已关闭：决策值仅展示；在「设置」开启后才会按实时温度写入 0x610。"
-                : "写入已授权：决策 PL1 / PL2 经启动备份 / 回读校验后写入 0x610；Tau 保持寄存器原值，EPP 与风扇不下发。";
+                ? "选中档位立即下发一次；「自动接管」关闭后，决策树不再每拍动态微调。升档冷却与 1W 阶梯量化始终生效。"
+                : "选中档位立即下发一次；之后由阶梯调度器按 1W 台阶、连续 3 拍迟滞与升档冷却低频动态微调；高温只降不升，EPP 与风扇不写入。";
 
     public string MsrSummary => MsrWritable
         ? (Settings.AllowRealWrite ? "可写 · 已授权" : "可写 · 未授权")
@@ -967,6 +1201,10 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                 {
                     _fwLimits = effective;
                     _controller.SetCurrentPl1W(effective.Pl1W);
+                    // v0.5.0：让阶梯调度器以「寄存器当前实读值」为台阶基准。
+                    // 不这么做的话，智能模式（开机不重放 L3）下 LastAppliedStep 一直为 null，
+                    // 首拍会被误判成「台阶未变」而永远跳过自动下发。
+                    _scheduler.SeedAppliedStep(effective.Pl1W, DateTime.UtcNow);
                     Pl1W = effective.Pl1W; Pl2W = effective.Pl2W; TauS = effective.TauS;
                     N(nameof(FwPl1Text)); N(nameof(FwPl2Text)); N(nameof(FwTauText));
                     N(nameof(FwDivergeText)); N(nameof(FwDefaultText));
@@ -997,9 +1235,22 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     /// </summary>
     private void ReplayPersistedTuning()
     {
+        if (_guard is null) return;
         var m = Settings.Manual;
-        if (m is null || _guard is null) return;
-        _manualLock = true;   // 手动微调优先，禁止决策树自动覆盖
+
+        // v0.5.0：模式是真值源。智能模式下即使残留 L3 值也不重放，
+        // 首拍决策由阶梯调度器按当前档位下发（选中档位时走事件通道）。
+        if (IsIntelligentMode)
+        {
+            if (m is not null)
+                AddAlert("info", "智能微调模式", "已保存的手工微调值未重放；切到「手工微调」页保存并下发才会写寄存器。");
+            return;
+        }
+        if (m is null)
+        {
+            AddAlert("info", "手工微调模式", "尚无保存的手工参数；到「手工微调」页编辑并保存后才会写入寄存器。");
+            return;
+        }
 
         if (!Settings.ReplayOnStartup)
         {
@@ -1016,7 +1267,10 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         var r = _guard.Apply(m.Pl1W, m.Pl2W, m.TauS, m.WriteTimeWindow);
         if (r.Ok)
         {
-            _lastAppliedPl1001 = m.Pl1W;
+            // 开机重放是「恢复用户保存的状态」，原样写回，不经过 1W 阶梯量化节流；
+            // 但必须同步调度器的台阶基准，否则首拍会把用户保存值误判成一次升档。
+            _scheduler.SeedAppliedStep(m.Pl1W, DateTime.UtcNow);
+            _lastWriteText = $"开机重放 {m.Pl1W:F1}W（手工微调）";
             AddAlert("info", "开机重放微调参数",
                 $"已写入 PL1 {m.Pl1W:F1}W / PL2 {m.Pl2W:F1}W / Tau {m.TauS:F0}s" +
                 $"（{m.SavedAt:yyyy-MM-dd HH:mm} 保存）。{r.Message}");
@@ -1074,17 +1328,19 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             ActivityWindow = activityWindow, VoltageOffsetMv = voltageOffsetMv,
             SavedAt = DateTime.Now
         };
-        // 手动微调优先：关掉自动接管，避免决策树每拍把用户保存的值覆盖掉
-        _manualLock = true;
-        Settings.AutoTakeover = false;
+        // v0.5.0：进入手工模式（单一真值源）。手工模式下决策树只演算、不写寄存器；
+        // 不再静默关掉「自动接管」——那个开关现在只管智能模式的持续动态微调。
+        Settings.TuningMode = TuningModes.Manual;
+        _scheduler.Reset();
         SettingsStore.Save(Settings);
+        NotifyModeChanged();
         N(nameof(SavedTuningText)); N(nameof(ManualLayerText));
         AddAlert("info", "微调参数已保存（L3）",
             $"PL1 {pl1:F1}W / PL2 {pl2:F1}W / Tau {tau:F0}s" +
             (epp >= 0 ? $" / EPP {epp}" : "（EPP 本机不可读，未保存）") +
             (maxPerf >= 0 ? $" / MaxPerf {maxPerf}" : string.Empty) +
             (voltageOffsetMv < 0 ? $" / 电压 {voltageOffsetMv}mV（个性化项，需二次确认）" : string.Empty) +
-            " 已写入 settings.json；下次开机自动重放到寄存器。自动接管已关闭。" +
+            " 已写入 settings.json；下次开机自动重放到寄存器。已切换到「手工微调」模式，智能档位只演算。" +
             "重新标定只更新 L2 推荐值，不会覆盖本次编辑。");
     }
 
@@ -1099,11 +1355,69 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
     public void ClearManualTuning()
     {
+        bool wasManual = IsManualMode;
         Settings.Manual = null;
-        _manualLock = false;
+        // 清掉 L3 后不留一个「没有值的手工模式」把用户卡住：自动回到智能模式。
+        if (wasManual) Settings.TuningMode = TuningModes.Intelligent;
+        _scheduler.Reset();
         SettingsStore.Save(Settings);
         N(nameof(SavedTuningText));
-        AddAlert("info", "已清除保存的微调参数", "下次开机不再重放，CPU 保持固件默认值。");
+        NotifyModeChanged();
+        AddAlert("info", "已清除保存的微调参数",
+            wasManual ? "已切回「智能微调」模式；下次开机不再重放手工值，CPU 保持固件默认值。"
+                      : "下次开机不再重放，CPU 保持固件默认值。");
+    }
+
+    /// <summary>从手工模式切回智能模式（档位选中或设置页触发，UI 先做二次确认）。</summary>
+    public void EnterIntelligentMode(bool clearManualValues)
+    {
+        if (!IsManualMode) return;
+        Settings.TuningMode = TuningModes.Intelligent;
+        if (clearManualValues) Settings.Manual = null;
+        _scheduler.Reset();
+        SettingsStore.Save(Settings);
+        NotifyModeChanged();
+        N(nameof(SavedTuningText));
+        AddAlert("info", "已切换到智能微调模式",
+            clearManualValues
+                ? "已停止重放并清除手工微调值；下次开机按智能档位决策下发。"
+                : "手工微调值保留在 settings.json，但不再重放；可在设置页清除。");
+    }
+
+    /// <summary>
+    /// v0.5.0 语义：自动接管只控制「智能模式下决策树是否每拍持续动态微调」，
+    /// 不影响选中档位的事件下发，也不影响手工模式。
+    /// </summary>
+    public void SetAutoTakeover(bool on)
+    {
+        Settings.AutoTakeover = on;
+        SettingsStore.Save(Settings);
+        N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(MonitorHintText)); N(nameof(ModeStatusText)); N(nameof(FooterMode));
+        AddAlert("info", on ? "持续动态微调已开启" : "持续动态微调已关闭",
+            on ? "决策树按 1W 台阶 + 3 拍迟滞 + 升档冷却低频下发；选中档位仍立即下发。"
+               : "选中档位仍立即下发一次，决策树每拍只演算、不写寄存器。");
+    }
+
+    /// <summary>设置页可调升档冷却（5~120s）。只影响升档写入，降档与高温降档不受限。</summary>
+    public void SetRampUpCooldown(double seconds)
+    {
+        Settings.RampUpCooldownSeconds = Math.Clamp(seconds,
+            WriteScheduler.MinCooldownSeconds, WriteScheduler.MaxCooldownSeconds);
+        _scheduler.CooldownSeconds = Settings.RampUpCooldownSeconds;
+        SettingsStore.Save(Settings);
+        N(nameof(CooldownText)); N(nameof(ModeStatusText));
+        AddAlert("info", "升档冷却已调整",
+            $"设为 {Settings.RampUpCooldownSeconds:F0}s；只约束升档下发，高温降档立即放行。");
+    }
+
+    /// <summary>模式相关绑定统一通知，避免漏掉某一处导致界面显示旧模式。</summary>
+    private void NotifyModeChanged()
+    {
+        N(nameof(IsManualModePublic)); N(nameof(IsIntelligentMode));
+        N(nameof(TuningModeText)); N(nameof(ModeStatusText)); N(nameof(FooterMode));
+        N(nameof(MonitorHintText)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(CooldownText));
     }
 
     public void SetReplayOnStartup(bool on)
@@ -1119,7 +1433,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         SettingsStore.Save(Settings);
         N(nameof(RealWriteEnabled));
         N(nameof(MsrSummary));
-        N(nameof(MonitorHintText));
+        N(nameof(MonitorHintText)); N(nameof(ModeStatusText)); N(nameof(GateReason));
+        N(nameof(FooterMode)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
     }
 
     /// <summary>真实写入；未授权或通道不可写时直接拒绝（不静默降级成演练）。</summary>
@@ -1258,41 +1573,217 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     /// 诊断用：说明当前档位决策到底会不会落到寄存器。
     /// 只供 --smoke / --env-check 报告使用，不绑定 UI，避免主界面堆说明文字。
     /// </summary>
-    public string AutoApplyGateText =>
-        _manualLock ? "被手动微调锁挡住（L3 优先）：档位/决策只演算，不写任何寄存器"
-        : !MsrWritable ? "MSR 通道不可写（权限/驱动）：只演算"
-        : !Settings.AllowRealWrite ? "设置页未勾选「允许写入 MSR」：只演算"
-        : !Settings.AutoTakeover ? "自动接管已关闭：只演算"
-        : "自动接管生效：决策 PL1/PL2 写入 0x610；Tau 保持寄存器原值，EPP 与风扇不下发";
+    public string AutoApplyGateText => IsManualMode
+        ? "手工微调模式：智能档位/决策树只演算；寄存器由「手工微调」页保存并下发"
+        : !WriteGatesOpen
+            ? $"写入闸门未全开（{GateReason}）：选中档位会二次确认，但当前只能演算"
+            : !Settings.AutoTakeover
+                ? "选中档位立即下发一次；决策树持续动态微调已关闭（设置页「自动接管」）"
+                : $"选中档位立即下发一次；决策树按 1W 台阶 + 3 拍迟滞 + {Settings.RampUpCooldownSeconds:F0}s 升档冷却低频微调";
 
-    /// <summary>自动接管：双开关 + 冷却保护 + 失败熔断（PRD G-08）。</summary>
-    private void TryAutoApply(double targetPl1, double targetPl2, double targetTau)
+    // ---------------- v0.5.0 阶梯下发（单入口） ----------------
+
+    private ProfileApplyPlan? _pendingPlan;
+    private bool _pendingProfileWrite;
+
+    private static string NormalizeProfile(string? profile) =>
+        (profile ?? "balanced").Trim().ToLowerInvariant() is "silent" or "performance" or "balanced"
+            ? (profile ?? "balanced").Trim().ToLowerInvariant() : "balanced";
+
+    /// <summary>
+    /// 选中档位前的「下发计划」：只重算一次决策树，给出温度、目标 PL1、Δ、
+    /// 闸门与风险原因，供 UI 二次确认展示。不改档位、不写寄存器。
+    /// </summary>
+    public ProfileApplyPlan PrepareProfileApply(string profile)
     {
-        if (_guard is null) return;
-        if (_manualLock) return;   // 已保存手动微调，决策树不接管寄存器
-        if (!MsrWritable || !Settings.AllowRealWrite || !Settings.AutoTakeover) return;
-        if ((DateTime.UtcNow - _lastAutoWrite).TotalSeconds < 3) return;
+        string p = NormalizeProfile(profile);
+        double ceiling = Math.Min(AutoCpuController.TargetCForProfile(p), Limits.MaxSafeCeiling);
 
-        bool hot = TempC >= Limits.MaxSafeCeiling - 3;
-        if (hot && targetPl1 > _lastAppliedPl1001) return;   // 高温只许降不许升
+        // 温度尚未采到（首屏 / 普通权限）时不预估目标瓦数，交由首拍事件通道下发，
+        // 避免拿占位温度伪造一个「目标 PL1」写进确认框。
+        var dec = double.IsNaN(TempC) ? null : RecomputeDecision(ceiling, p);
+        double targetPl1 = dec?.Pl1W ?? double.NaN;
+        double targetPl2 = dec?.Pl2W ?? Pl2W;
+        double targetTau = dec?.TauS ?? TauS;
 
-        if (Math.Abs(targetPl1 - _lastAppliedPl1001) < 1.0) return;
+        int step = double.IsNaN(targetPl1) ? 0
+            : (int)Math.Round(Math.Clamp(targetPl1, Limits.MinPL1, Limits.MaxPL1), MidpointRounding.AwayFromZero);
+        int applied = _scheduler.LastAppliedStep ?? step;
+        double delta = double.IsNaN(targetPl1) ? 0 : step - applied;
+        double remaining = _scheduler.CooldownRemaining(DateTime.UtcNow);
+        bool gates = WriteGatesOpen;
+        bool leaveManual = IsManualMode;
+        bool hasManual = Settings.Manual is not null;
+        bool hot = !double.IsNaN(TempC) && TempC >= Limits.MaxSafeCeiling;
+        bool hardBlocked = hot && delta > 0;   // 高温只降不升，二次确认不可解除
 
-        _lastAutoWrite = DateTime.UtcNow;
-        var r = _guard.Apply(Math.Clamp(targetPl1, Limits.MinPL1, Limits.MaxPL1),
-                             Math.Clamp(targetPl2, Limits.MinPL2, Limits.MaxPL2), targetTau, writeTimeWindow: false);
+        var reasons = new List<string>();
+        if (!gates) reasons.Add($"写入闸门未全开（{GateReason}）：确认后仍只能演算");
+        if (leaveManual) reasons.Add("将停止开机重放并清除已保存的手工微调值（L3）");
+        if (delta > 0) reasons.Add($"跨档升功率 Δ +{delta:F0}W");
+        if (remaining > 0 && delta > 0) reasons.Add($"升档冷却剩余 {remaining:F0}s，确认后强制下发一次");
+        if (hot) reasons.Add($"当前 {TempC:F1}°C 已到安全上限 {Limits.MaxSafeCeiling:F0}°C");
+        if (double.IsNaN(targetPl1)) reasons.Add("温度尚未采到：将在首拍采样后自动下发");
+
+        bool needConfirmation = !gates || leaveManual || hardBlocked || delta > 0 ||
+                                (remaining > 0 && delta > 0) || double.IsNaN(targetPl1);
+        string confirmReason = reasons.Count == 0
+            ? "档位切换（同台阶或降档），无需额外风险确认"
+            : string.Join("；", reasons);
+
+        _pendingPlan = new ProfileApplyPlan(
+            p, Label(p), ceiling, TempC, targetPl1, targetPl2, targetTau, delta,
+            gates, GateReason, needConfirmation, confirmReason, hardBlocked,
+            remaining, leaveManual, hasManual);
+        return _pendingPlan;
+    }
+
+    /// <summary>丢弃缓存的计划，避免下一拍复用旧温度/旧目标值。</summary>
+    public void ClearPendingPlan() => _pendingPlan = null;
+
+    private static string Label(string profile) => profile switch
+    {
+        "silent" => "静音优先",
+        "performance" => "性能优先",
+        _ => "均衡"
+    };
+
+    /// <summary>按指定天花板与档位重算一次决策（供选中事件使用；Tick 仍走自己的每拍 Update）。</summary>
+    private AutoCpuDecision RecomputeDecision(double ceilingC, string profile) =>
+        _controller.Update(
+            tempC: TempC,
+            powerW: PowerW,
+            ceilingC: ceilingC,
+            ambientC: AmbientC,
+            profile: profile,
+            perf: new PerfSample { CoreClocksGhz = ClockGhz, MaxTurboGhz = 0 },
+            loadPct: LoadPct,
+            dTdt: 0,
+            firmwarePl1W: _firmwarePl1W > 0 ? _firmwarePl1W : double.NaN);
+
+    /// <summary>
+    /// 执行「选中即生效」：切换模式（如需）→ 更新档位与天花板 → 立即经阶梯调度器下发一次。
+    /// force=true 只能来自 UI 二次确认；高温只降不升硬闸与写入熔断仍然不可绕过。
+    /// </summary>
+    public WriteOutcome ApplyProfile(string profile, bool force)
+    {
+        string p = NormalizeProfile(profile);
+        var plan = _pendingPlan is { } cached && cached.Profile == p
+            ? cached : PrepareProfileApply(p);
+
+        if (plan.HardBlocked)
+            return new WriteOutcome(false,
+                $"已拒绝：{plan.ConfirmReason}。只降不升是硬件安全红线，二次确认不能解除。", 0);
+
+        // 从手工模式切回智能：二次确认已在 UI 完成，这里才真正停止重放并清除 L3。
+        if (plan.LeaveManualMode) EnterIntelligentMode(clearManualValues: true);
+
+        // 意图层立即生效并落盘（档位与天花板），与硬件下发解耦。
+        SetProfile(p);
+
+        if (double.IsNaN(plan.TargetPl1W))
+        {
+            _pendingProfileWrite = true;
+            _lastWriteText = $"已切到「{plan.ProfileLabel}」，等待首拍采样后下发";
+            N(nameof(LastWriteText)); N(nameof(ModeStatusText));
+            AddAlert("info", "档位已切换（待首拍下发）",
+                "当前还没有有效温度采样，选中意图已生效；首拍采样后会经阶梯调度器立即下发一次。");
+            return new WriteOutcome(false, _lastWriteText, 0, force);
+        }
+
+        _pendingPlan = null;
+        return DispatchWrite(WriteChannel.ProfileEvent,
+            plan.TargetPl1W, plan.TargetPl2W, plan.TargetTauS, force);
+    }
+
+    /// <summary>
+    /// 手工微调页「保存并下发」走同一入口，保证审计与节流口径一致。
+    /// 手工页允许显式改写 Tau（writeTimeWindow），其它通道一律保持寄存器原值。
+    /// </summary>
+    public WriteOutcome ApplyManualWrite(double pl1, double pl2, double tau,
+        bool writeTimeWindow = false, bool force = true)
+        => DispatchWrite(WriteChannel.ManualSave, pl1, pl2, tau, force, writeTimeWindow);
+
+    /// <summary>
+    /// 所有 0x610 下发的唯一入口：选中事件、决策树每拍、手工保存、开机重放。
+    /// 阶梯量化 / 迟滞 / 升档冷却 / 高温降档 / 熔断都在 WriteScheduler 里，
+    /// 这里只负责闸门、真实写入、回读校验结果与审计告警。
+    /// </summary>
+    private WriteOutcome DispatchWrite(WriteChannel channel, double pl1, double pl2, double tau,
+        bool force = false, bool writeTimeWindow = false)
+    {
+        string ChannelText() => channel switch
+        {
+            WriteChannel.ProfileEvent => "选中档位",
+            WriteChannel.ManualSave => "手工微调",
+            WriteChannel.StartupReplay => "开机重放",
+            _ => "决策树"
+        };
+
+        WriteOutcome Refuse(string reason, WriteVerdict verdict)
+        {
+            if (channel != WriteChannel.AutoTick)
+            {
+                _lastWriteText = $"未下发（{ChannelText()}）：{reason}";
+                N(nameof(LastWriteText)); N(nameof(ModeStatusText));
+                AddAlert(verdict == WriteVerdict.HardBlocked ? "danger" : "info",
+                    "下发被拦下", _lastWriteText);
+            }
+            return new WriteOutcome(false, reason, _scheduler.LastAppliedStep ?? 0);
+        }
+
+        if (_guard is null) return Refuse("MSR 通道不可用", WriteVerdict.HardBlocked);
+        if (IsCalibrating) return Refuse("标定进行中，暂停下发", WriteVerdict.Skip);
+        if (channel is not (WriteChannel.ManualSave or WriteChannel.StartupReplay) && IsManualMode)
+            return Refuse("手工微调模式下智能档位/决策只演算", WriteVerdict.Skip);
+        if (channel == WriteChannel.AutoTick && !Settings.AutoTakeover)
+            return new WriteOutcome(false, "自动接管已关闭：决策树每拍只演算",
+                _scheduler.LastAppliedStep ?? 0);
+
+        var now = DateTime.UtcNow;
+        var req = new WriteRequest(channel, pl1, TempC, now, WriteGatesOpen, Limits.MaxSafeCeiling);
+        // 自动通道永远不允许 force；事件通道的 force 只能来自 UI 二次确认。
+        var decision = force && channel != WriteChannel.AutoTick
+            ? _scheduler.ForceWrite(req) : _scheduler.Evaluate(req);
+
+        if (decision.Verdict == WriteVerdict.Skip)
+            return Refuse(decision.Reason, WriteVerdict.Skip);
+        if (decision.Verdict != WriteVerdict.Write)
+            return Refuse(decision.Reason, decision.Verdict);
+
+        // 第二道硬闸：接近安全上限时只降不升，即使调度器因量化误差放行也不写。
+        if (!double.IsNaN(TempC) && TempC >= Limits.MaxSafeCeiling - 3 &&
+            decision.StepPl1W > (_scheduler.LastAppliedStep ?? int.MaxValue))
+            return Refuse($"温度 {TempC:F1}°C 接近安全上限：只降不升", WriteVerdict.HardBlocked);
+
+        double pl2W = Math.Clamp(Math.Round(pl2), Limits.MinPL2, Limits.MaxPL2);
+        // 手工微调页保留用户输入的精确瓦数与 Tau 改写能力；智能通道一律写 1W 量化台阶。
+        double pl1W = channel == WriteChannel.ManualSave
+            ? Math.Clamp(pl1, Limits.MinPL1, Limits.MaxPL1)
+            : Math.Clamp(decision.StepPl1W, Limits.MinPL1, Limits.MaxPL1);
+        var r = _guard.Apply(pl1W, pl2W, tau, writeTimeWindow: writeTimeWindow);
+        _scheduler.Commit(decision.StepPl1W, now, r.Ok);
 
         if (r.Ok)
         {
-            _lastAppliedPl1001 = targetPl1;
             _autoWriteFailures = 0;
+            _lastWriteText = $"已下发 {pl1W:F1}W（{ChannelText()}{ (force ? " · 二次确认" : "") }）";
+            N(nameof(LastWriteText)); N(nameof(ModeStatusText)); N(nameof(CooldownText));
+            AddAlert("info", "寄存器已下发",
+                $"PL1 {pl1W:F1}W / PL2 {pl2W:F0}W 写入 0x610 并回读校验；{decision.Reason}。" +
+                "功耗/频率收敛仍需 Tau 量级时间，不等于性能立刻变化。");
+            return new WriteOutcome(true, r.Message, decision.StepPl1W, force);
         }
-        else if (++_autoWriteFailures >= 2)
+
+        _lastWriteText = $"下发失败（{ChannelText()}）：{r.Message}";
+        N(nameof(LastWriteText)); N(nameof(ModeStatusText));
+        if (++_autoWriteFailures >= 2 && channel == WriteChannel.AutoTick)
         {
             Settings.AutoTakeover = false;
             SettingsStore.Save(Settings);
-            AddAlert("danger", "自动接管已熔断", r.Message);
+            AddAlert("danger", "动态微调已熔断", r.Message + "；已关闭「自动接管」，选中档位仍可显式下发。");
         }
+        return new WriteOutcome(false, r.Message, decision.StepPl1W);
     }
 
     // ---------------- 控制 ----------------
@@ -1313,13 +1804,19 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         IsRunning = false;
     }
 
+    /// <summary>
+    /// 只改「意图层」并落盘：档位 + 天花板。硬件下发由 ApplyProfile / DispatchWrite 独立完成，
+    /// 两者解耦，避免把「选中」和「写寄存器」混成同一条链路。
+    /// </summary>
     public void SetProfile(string profile)
     {
-        Profile = profile;
-        Settings.Profile = profile;
-        CeilingC = Math.Min(AutoCpuController.TargetCForProfile(profile), Limits.MaxSafeCeiling);
+        string p = NormalizeProfile(profile);
+        Profile = p;
+        Settings.Profile = p;
+        CeilingC = Math.Min(AutoCpuController.TargetCForProfile(p), Limits.MaxSafeCeiling);
         Settings.CeilingC = CeilingC;
         SettingsStore.Save(Settings);
+        N(nameof(ModeStatusText));
     }
 
     public void SetCeiling(double ceiling)
@@ -1575,12 +2072,19 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         _fanMeasuredPct = s.FanControlPercent;
         _fanSource = s.FanSource;
         _fanRawValue = s.FanRawValue;
+        _fanStagnantReads = s.FanStagnantReads;
+        _fanStagnant = s.FanStagnant;
         _gpuName = s.GpuName;
         _gpuSource = s.GpuSource;
-        N(nameof(CpuLoadText)); N(nameof(GpuLoadText)); N(nameof(GpuMemoryText));
-        N(nameof(GpuMemoryDetailText)); N(nameof(FanMeasuredText));
-        N(nameof(FanMeasuredHintText)); N(nameof(FanDetailText));
-        N(nameof(GpuSourceText)); N(nameof(GpuNameText)); N(nameof(GpuHintText));
+        _lhmCpuTotal = s.LhmCpuTotal;
+        _gpuTempC = s.GpuTempC;
+        N(nameof(CpuLoadText)); N(nameof(CpuLoadHintText));
+        N(nameof(GpuLoadText)); N(nameof(GpuMemoryText));
+        N(nameof(GpuMemoryDetailText)); N(nameof(GpuMemoryHintText));
+        N(nameof(GpuCardSubtitleText)); N(nameof(FanMeasuredText));
+        N(nameof(FanRawText)); N(nameof(FanMeasuredHintText)); N(nameof(FanDetailText));
+        N(nameof(FanHintBrush)); N(nameof(GpuSourceText)); N(nameof(GpuNameText));
+        N(nameof(GpuHintText));
 
         if (!double.IsNaN(s.PowerW)) PowerW = s.PowerW;
         PowerSource = s.Source;
@@ -1661,6 +2165,28 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         Push(Pl1History, Pl1W, HistoryCap);
         Push(PowerHistory, PowerW, HistoryCap);
 
+        // 统一时序图：每拍对所有序列各推一点，不可读写 NaN，保证时间轴索引对齐。
+        PushMetric(_sTemp, TempC);
+        PushMetric(_sPl1, dec.Pl1W);
+        PushMetric(_sPower, PowerW);
+        PushMetric(_sCpu, LoadPct);
+        PushMetric(_sGpu, _gpuLoadPct);
+        PushMetric(_sGpuMem, _gpuMemPct);
+        // 图例同步显示 EC 原始字节；恒定判定由采集层逐拍给出，这里只呈现不加工。
+        _sFan.Extra = double.IsNaN(_fanRawValue) ? "" : $" (原始 {_fanRawValue:F0})";
+        PushMetric(_sFan, _fanMeasuredPct);
+        if (!double.IsNaN(_fanRpm))
+        {
+            EnsureFanRpmSeries();
+            PushMetric(_sFanRpm!, _fanRpm);
+        }
+        else if (_sFanRpm is not null)
+        {
+            PushMetric(_sFanRpm, double.NaN);
+        }
+        N(nameof(HistoryCaptionText));
+        N(nameof(HistoryStartText));
+
         string arrow = dec.Direction switch { > 0 => "↑", < 0 => "↓", _ => "→" };
         var row = new DecisionRow(
             Now(), LastRule, dec.Reason, $"{dec.Pl1W:F1}W {arrow}", arrow, dec.Limit.ToString(), LastPath);
@@ -1675,7 +2201,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             double.IsNaN(_fanMeasuredPct) ? "--" : $"{_fanMeasuredPct:F0}%"), TableCap);
 
         _raw.Add(new RawSample(DateTime.Now, TempC, LoadPct, PowerW, dec.Pl1W,
-            LastRule.Replace(",", "，"), _fanMeasuredPct));
+            LastRule.Replace(",", "，"), _fanMeasuredPct, _fanRawValue));
         if (_raw.Count > 3600) _raw.RemoveAt(0);
 
         // 事件：触顶 / 硬件热保护 / 恢复
@@ -1684,10 +2210,26 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         if (TempC >= Limits.MaxSafeCeiling)
             AddAlert("danger", "接近硬件上限", $"{TempC:F1}°C ≥ 安全上限 {Limits.MaxSafeCeiling:F0}°C，应降低负载或加强散热。");
 
-        if (!IsCalibrating) TryAutoApply(dec.Pl1W, dec.Pl2W, dec.TauS);
+        // v0.5.0 研究埋点：每个真实触顶热事件落一行 CSV（本期不做自适应冷却公式）。
+        ObserveThermalEvent();
+
+        if (!IsCalibrating)
+        {
+            if (_pendingProfileWrite)
+            {
+                // 首屏选中档位时还没有温度采样：这里用首拍真实决策补齐一次事件下发。
+                _pendingProfileWrite = false;
+                DispatchWrite(WriteChannel.ProfileEvent, dec.Pl1W, dec.Pl2W, dec.TauS);
+            }
+            else
+            {
+                DispatchWrite(WriteChannel.AutoTick, dec.Pl1W, dec.Pl2W, dec.TauS);
+            }
+        }
 
         if (IsCalibrating) StepCalibration();
 
+        N(nameof(CooldownText)); N(nameof(ModeStatusText));
         Ticked?.Invoke();
     }
 
@@ -1708,14 +2250,71 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         while (list.Count > cap) list.RemoveAt(list.Count - 1);
     }
 
+    // ---------------- v0.5.0 热事件研究埋点 ----------------
+
+    private static string ThermalEventCsvPath =>
+        Path.Combine(SettingsStore.DataDirectory, "thermal-events.csv");
+
+    /// <summary>
+    /// 每拍观察一次热事件。本期只采数、不实现「超温幅度 → 冷却时长」公式：
+    /// 本机 1001 个历史压测样本最高 78°C，零个 ≥85°C 触顶事件，任何系数都是未验证假设。
+    /// </summary>
+    private void ObserveThermalEvent()
+    {
+        var done = _thermalEvents.Observe(TempC, CeilingC,
+            _scheduler.LastAppliedStep ?? 0, DateTime.UtcNow);
+        if (done is not null) AppendThermalEvent(done);
+    }
+
+    private void AppendThermalEvent(ThermalEventRecord e)
+    {
+        try
+        {
+            Directory.CreateDirectory(SettingsStore.DataDirectory);
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string Num(double v) => double.IsNaN(v) ? string.Empty : v.ToString("F2", inv);
+            var line =
+                $"{e.StartedAt:yyyy-MM-dd HH:mm:ss}," +
+                $"{e.PeakC.ToString("F1", inv)},{e.CeilingC.ToString("F1", inv)}," +
+                $"{e.OvershootC.ToString("F1", inv)},{e.StepDownCount},{e.StepDownWatts.ToString("F1", inv)}," +
+                $"{e.EventDurationS.ToString("F1", inv)},{Num(e.FallRateP50)},{Num(e.FallRateP95)}," +
+                $"{e.CooldownSeconds.ToString("F1", inv)},{e.SecondaryTouches60s},{e.EndReason}";
+
+            if (!File.Exists(ThermalEventCsvPath))
+            {
+                File.WriteAllText(ThermalEventCsvPath,
+                    "开始时间(UTC),峰值温度(°C),天花板(°C),超温幅度(°C),降档次数,降档总瓦数(W)," +
+                    "事件时长(s),回落速率P50(°C/s),回落速率P95(°C/s),实际冷却(s)," +
+                    "恢复后60s二次触顶次数,结束原因" + System.Environment.NewLine + line + System.Environment.NewLine,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            }
+            else
+            {
+                File.AppendAllText(ThermalEventCsvPath, line + System.Environment.NewLine, new UTF8Encoding(false));
+            }
+
+            AddAlert("info", "热事件已记录",
+                $"峰值 {e.PeakC:F1}°C / 天花板 {e.CeilingC:F0}°C，超温 {e.OvershootC:F1}°C，" +
+                $"降档 {e.StepDownCount} 次共 {e.StepDownWatts:F0}W，恢复后 60s 二次触顶 {e.SecondaryTouches60s} 次。" +
+                "已写入 thermal-events.csv（研究埋点，不参与冷却策略）。");
+        }
+        catch
+        {
+            // 埋点失败绝不影响主循环与热控安全
+        }
+    }
+
     /// <summary>导出 CSV（UTF-8 BOM，Excel 直接打开不乱码，AC-18）。</summary>
     public int ExportCsv(string path)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,温度(°C),负载(%),包功耗(W),决策PL1(W),风扇(%),命中规则");
+        // 风扇两列分开：换算档位百分比 + EC 原始字节，便于事后核对读数是否真的在变化。
+        sb.AppendLine("时间,温度(°C),负载(%),包功耗(W),决策PL1(W),风扇(%),风扇原始值,命中规则");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
         foreach (var r in _raw)
             sb.AppendLine($"{r.At:yyyy-MM-dd HH:mm:ss},{r.Temp:F1},{r.Load:F0},{r.Power:F0},{r.Pl1:F1}," +
-                          $"{(double.IsNaN(r.FanPct) ? "" : r.FanPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))},{r.Rule}");
+                          $"{(double.IsNaN(r.FanPct) ? "" : r.FanPct.ToString("F1", inv))}," +
+                          $"{(double.IsNaN(r.FanRaw) ? "" : r.FanRaw.ToString("F0", inv))},{r.Rule}");
 
         File.WriteAllText(path, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         return _raw.Count;
@@ -1742,6 +2341,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        // 未完结的热事件在退出时收尾，避免关机直接终止进程导致丢样本。
+        var pending = _thermalEvents.Flush(DateTime.UtcNow);
+        if (pending is not null) AppendThermalEvent(pending);
         _stress?.Dispose();
         _telemetry.Dispose();
         _guard?.Dispose();

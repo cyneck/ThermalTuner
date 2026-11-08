@@ -93,8 +93,15 @@ public sealed class MsrGuard : IDisposable
     public ulong? StartupHwpRaw => _startupEppRaw;
     /// <summary>0x1AD 睿频倍率表是否可读（出厂默认值的锚点）。</summary>
     public bool TurboSupported => _startupTurboRaw.HasValue;
+    /// <summary>
+    /// 0x1AD 是否可写。PawnIO IntelMSR 模块的写白名单不含该寄存器，
+    /// 因此「可读」不等于「可写」——UI 必须用本属性而不是 TurboSupported 判断编辑权。
+    /// </summary>
+    public bool TurboWritable => _startupTurboRaw.HasValue && PawnIoMsrBackend.IsWriteAllowed(MsrTurbo);
     /// <summary>0x150 是否可读。可读 ≠ 可写，写入能力必须靠实测。</summary>
     public bool VoltageReadable => _startupVoltageRaw.HasValue;
+    /// <summary>0x150 是否在模块写白名单内（本机能否降压仍取决于 Plundervolt 微码）。</summary>
+    public bool VoltageWritable => _startupVoltageRaw.HasValue && PawnIoMsrBackend.IsWriteAllowed(MsrVoltage);
     public ulong? StartupVoltageRaw => _startupVoltageRaw;
 
     /// <summary>当前 0x774 实读状态（读不到返回 null）。</summary>
@@ -496,6 +503,11 @@ public sealed class MsrGuard : IDisposable
             if (_startupTurboRaw is not ulong startupRaw)
                 return new MsrWriteResult(MsrWriteOutcome.Rejected,
                     "本机读不到 0x1AD 睿频倍率表，无法调节（PL1/PL2/Tau 不受影响）");
+            if (!TurboWritable)
+                return new MsrWriteResult(MsrWriteOutcome.Rejected,
+                    "当前后端不支持写入 0x1AD：PawnIO IntelMSR 模块的写白名单只含 " +
+                    "0x601 / 0x610 / 0x150 / 0x607 / 0x608 / 0x1A4。睿频倍率表保持只读，" +
+                    "功耗与温度控制不受影响。");
 
             var startup = TurboRatioLimit.Decode(startupRaw);
             if (ratio < TurboRatioLimit.MinRatio || ratio > startup.MaxTier)

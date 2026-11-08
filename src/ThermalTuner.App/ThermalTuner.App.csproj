@@ -11,7 +11,7 @@
     <RootNamespace>ThermalTuner.App</RootNamespace>
     <AssemblyName>ThermalTuner.App</AssemblyName>
     <!-- 统一版本口径：与 README、侧栏版本号一致 -->
-    <Version>0.4.4</Version>
+    <Version>0.5.1</Version>
     <!-- 可执行文件的运行图标（任务栏 / 资源管理器），同时作为窗口与托盘图标来源 -->
     <ApplicationIcon>Assets\ThermalTuner.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -35,18 +35,34 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 0.9.4 自带 WinRing0 内核驱动，提供 Ring0.WriteMsr（可读写 MSR）。
-         0.9.6 起 LHM 把后端换为 PawnIO，且随包 IntelMSR 模块只有 ioctl_read_msr（只读），
-         会导致 0x610 写入能力丢失。本项目需要真实下发 PL1/PL2/EPP，故固定 0.9.4。 -->
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
+    <!-- LHM 仅用于**传感器采样**（温度 / 功耗 / 频率 / GPU）。
+         MSR 读写不经过 LHM：v0.5.1 起改走 PawnIO 直连 IOCTL（见 Services/Msr/PawnIoDevice.cs）。
+         版本必须 0.9.6+：0.9.4 的传感器侧依赖 WinRing0，而 WinRing0 已被 AV 按易受攻击驱动
+         名单删除，产品不再保留该依赖。0.9.6 改用 PawnIO 后端，与本项目共用同一驱动。 -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>
 
-  <!-- v0.4.2 误升级 0.9.6+ 时留下的 PawnIO 适配，零调用点、只读、未启用。
-       运行时只用 LHM 0.9.4 / WinRing0；保留文件作历史参考，不参与编译。 -->
+  <!-- PawnIO 已签名模块（PawnIO.Modules 0.2.11，LGPL-2.1）。
+       随产品分发时必须附带 COPYING（见 Assets/PawnIO/README.txt 的源码获取方式）。
+       加载时由驱动做签名校验，模块内部再按白名单限制可写的 MSR。 -->
   <ItemGroup>
-    <Compile Remove="Services/Msr/PawnIoNative.cs" />
-    <Compile Remove="Services/Msr/LhmPawnModule.cs" />
+    <EmbeddedResource Include="Assets\PawnIO\IntelMSR.bin">
+      <LogicalName>ThermalTuner.App.Assets.PawnIO.IntelMSR.bin</LogicalName>
+    </EmbeddedResource>
+    <!-- PawnIO 内核驱动包（微软 WHQL 签名）：用于首次安装时自管释放与注册。
+         三件套必须同时存在，pawnsio.inf 引用了 .sys 与 .cat。 -->
+    <EmbeddedResource Include="Assets\PawnIO\driver\pawnio.inf">
+      <LogicalName>ThermalTuner.App.Assets.PawnIO.driver.pawnio.inf</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\PawnIO\driver\PawnIO.sys">
+      <LogicalName>ThermalTuner.App.Assets.PawnIO.driver.PawnIO.sys</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\PawnIO\driver\PawnIO.cat">
+      <LogicalName>ThermalTuner.App.Assets.PawnIO.driver.PawnIO.cat</LogicalName>
+    </EmbeddedResource>
+    <None Include="Assets\PawnIO\COPYING.LESSER.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\PawnIO\README.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

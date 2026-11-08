@@ -78,13 +78,17 @@ internal static class SensorProbe
         try
         {
             using var telemetry = new HardwareTelemetry();
-            var s = telemetry.Read();
+            telemetry.Read();                       // 预热一拍：建立系统计时差分窗口
+            System.Threading.Thread.Sleep(1100);    // 让正式采样的窗口跨过一个完整间隔
+            var s = telemetry.Read();               // 取第二拍，排除启动开销造成的首拍虚高
             sb.AppendLine();
-            sb.AppendLine("== 聚合指标（HardwareTelemetry.Read 一拍）==");
-            sb.AppendLine($"CPU 使用率     : {Pct(s.LoadPercent)}");
+            sb.AppendLine("== 聚合指标（HardwareTelemetry.Read 第二拍，间隔 1.1s）==");
+            sb.AppendLine($"CPU 使用率     : {Pct(s.LoadPercent)}（系统计时 · 任务管理器同口径）");
+            sb.AppendLine($"LHM CPU Total  : {Pct(s.LhmCpuTotal)}（线程级估算，仅诊断对照，不进界面/决策树）");
             sb.AppendLine($"GPU            : {(string.IsNullOrEmpty(s.GpuName) ? "未检测到" : s.GpuName)} / {s.GpuSource}");
             sb.AppendLine($"GPU 使用率     : {Pct(s.GpuLoadPercent)}");
-            sb.AppendLine($"GPU 显存占用率 : {Pct(s.GpuMemoryPercent)}");
+            sb.AppendLine($"GPU 核心温度   : {(double.IsNaN(s.GpuTempC) ? "N/A" : $"{s.GpuTempC:F0} °C")}");
+            sb.AppendLine($"GPU 显存占用率 : {Pct(s.GpuMemoryPercent)}（专用显存 Used/Total）");
             sb.AppendLine($"GPU 显存用量   : " +
                           $"{(double.IsNaN(s.GpuMemoryUsedMb) ? "N/A" : $"{s.GpuMemoryUsedMb:F0} / {s.GpuMemoryTotalMb:F0} MB")}");
             sb.AppendLine($"风扇 RPM       : {(double.IsNaN(s.FanRpm) ? "N/A" : $"{s.FanRpm:F0}")}");

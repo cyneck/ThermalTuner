@@ -14,9 +14,26 @@
 
       <Border Style="{StaticResource Card}">
         <StackPanel>
-          <TextBlock Text="使用档位" Style="{StaticResource H2}" />
-          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,12"
-                     Text="档位只是意图，具体 PL1 由决策树按温度与热阻动态给出；风扇由 EC 按温度曲线自动调速，软件不直接控制转速。" />
+          <Grid>
+            <TextBlock Text="使用档位 · 选中即生效" Style="{StaticResource H2}" />
+            <Border Style="{StaticResource Chip}" HorizontalAlignment="Right" Margin="0">
+              <TextBlock Style="{StaticResource Mono}" FontSize="11">
+                <Run Text="当前模式 " /><Run Text="{Binding TuningModeText, Mode=OneWay}" />
+              </TextBlock>
+            </Border>
+          </Grid>
+          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,10" TextWrapping="Wrap"
+                     Text="点选档位会立即触发一次「决策树重算 + 0x610 下发」，有权限/高温/升档冷却/离开手工模式等风险时先二次确认。之后由阶梯调度器按 1W 台阶、3 拍迟滞与升档冷却低频动态微调；PL1 由温度与热阻决定，不是把档位写死成固定瓦数。风扇由 EC 自动调速，软件不直控。" />
+
+          <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+            <StackPanel>
+              <TextBlock Text="{Binding ModeStatusText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" TextWrapping="Wrap" ToolTip="{Binding MonitorHintText, Mode=OneWay}" />
+              <TextBlock Text="{Binding LastWriteText, Mode=OneWay}" Style="{StaticResource Label}"
+                         FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextTertiary}" />
+            </StackPanel>
+          </Border>
 
           <UniformGrid Columns="3">
             <RadioButton Style="{StaticResource ModeCard}" GroupName="mode" Tag="silent"
@@ -55,6 +72,13 @@
               </StackPanel>
             </RadioButton>
           </UniformGrid>
+
+          <Border x:Name="OutcomeBanner" Background="{StaticResource AccentSoft}"
+                  BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="6"
+                  Padding="10,8" Margin="0,12,0,0" Visibility="Collapsed">
+            <TextBlock x:Name="OutcomeText" Style="{StaticResource Body}" FontSize="11"
+                       Foreground="{StaticResource AccentDeep}" TextWrapping="Wrap" />
+          </Border>
         </StackPanel>
       </Border>
 
@@ -247,7 +271,7 @@
             </StackPanel>
           </Grid>
           <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
-                     Text="Tau / EPP / 风扇为决策树演算值，未写入硬件；自动接管开启时仅 PL1 / PL2 写入 0x610。转速由 EC 按温度曲线自动调节。" />
+                     Text="Tau / EPP / 风扇始终是演算值，从不写入硬件；只有 PL1 / PL2 会经阶梯调度器写入 0x610。转速由 EC 按温度曲线自动调节；写入成功只代表寄存器回读一致，功耗与频率收敛仍需 Tau 量级时间。" />
         </StackPanel>
       </Border>
     </StackPanel>

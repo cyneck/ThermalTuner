@@ -13,6 +13,8 @@ public class AutoCpuController
     private readonly ThermalDecisionEngine _engine = new();
     private readonly TuningGains _gains = TuningGains.Default;
     private readonly HardwareLimits _limits;
+    // 轨迹整形层：决策树输出 → 整形 → 调度器。降档与高温直通不受影响。
+    private readonly TrajectoryShaper _shaper;
     private double _pl1;
     // 决策起点：未注入实读值时是平台区间的演算中点（通用公式），运行时由 App 层用 0x610 实读值覆盖。
     // 不注入时决策树仍可跑，但 HasMeasuredPl1=false，界面不得把它当作「当前寄存器实值」。
@@ -46,9 +48,11 @@ public class AutoCpuController
     }
 
     /// <summary>注入式构造：由调用方显式指定硬件约束（测试/仿真用）。</summary>
-    public AutoCpuController(HardwareLimits limits)
+    /// <param name="trajectory">轨迹整形参数；null 使用 Default（升档 6 W/带、5 °C 带、α=0.35）。</param>
+    public AutoCpuController(HardwareLimits limits, TrajectorySettings? trajectory = null)
     {
         _limits = limits ?? throw new ArgumentNullException(nameof(limits));
+        _shaper = new TrajectoryShaper(trajectory);
         // 未注入实读值时，用平台合法区间的中点作为纯演算占位（通用公式，不是任何机型的默认值）。
         // 真实运行时必须在 InitMsr 后调用 SetCurrentPl1W 注入 0x610 实读值；
         // 在此之前 HasMeasuredPl1 = false，界面不得把它当作「当前寄存器实值」。
@@ -56,6 +60,12 @@ public class AutoCpuController
                                  _limits.MinPL1, _limits.MaxPL1);
         _pl1 = _initialPl1;
     }
+
+    /// <summary>本拍整形结果（供凭证与界面展示；null 表示尚未跑过一拍）。</summary>
+    public ShapedTarget? LatestShaping { get; private set; }
+
+    /// <summary>轨迹整形参数（运行期只读）。</summary>
+    public TrajectorySettings Trajectory => _shaper.Settings;
 
     /// <summary>
     /// 是否已注入 MSR 0x610 实读的默认 PL1。
@@ -154,7 +164,26 @@ public class AutoCpuController
             }
         }
 
-        _pl1 = Math.Clamp(receipt.Action.TargetPL1W, hwLimits.MinPL1, upper);
+        double clampedTarget = Math.Clamp(receipt.Action.TargetPL1W, hwLimits.MinPL1, upper);
+
+        // 5.1 轨迹整形（决策树输出之后、写调度器之前）
+        //     硬闸直通：PROCHOT 或已达温度天花板 → 跳过一切整形，立即降压。
+        //     其余情况：升档按「5 °C 温度带」门控，每跨一带最多 +MaxRiseWPerGate；降档不受门控。
+        bool thermalBypass = snapshot.IsProchotActive
+            || (!double.IsNaN(tempC) && tempC >= userProfile.TargetTemperatureCeiling);
+        // 热余量充足（低于天花板 ≥2 个温度带）时放开升档门控：
+        // 轻载回升不该被「同带内不放行」卡成棘轮，此时并无阶跃发热风险。
+        double headroomC = double.IsNaN(tempC)
+            ? double.NaN
+            : userProfile.TargetTemperatureCeiling - tempC;
+        bool lowThermalStress = !double.IsNaN(headroomC)
+            && headroomC >= 2 * _shaper.Settings.BandC;
+        var shaped = _shaper.Step(tempC, clampedTarget, _pl1, thermalBypass, lowThermalStress);
+        LatestShaping = shaped;
+
+        // 量化不得把结果推过本拍目标（1 W 台阶向上取整），也不得越过硬件边界。
+        double shapedW = Math.Min(shaped.Pl1W, clampedTarget);
+        _pl1 = Math.Clamp(shapedW, hwLimits.MinPL1, hwLimits.MaxPL1);
         _currentFan = receipt.Action.TargetFanPercent;
         _last = DateTime.UtcNow;
 
@@ -171,6 +200,9 @@ public class AutoCpuController
             RConfident = _r.Solved,
             RQuality = identifiedState.QualityDescription,
             Reason = receipt.CausalReason,
+            ShapingReason = shaped.Reason,
+            GateHeld = shaped.GateHeld,
+            FilteredTempC = shaped.FilteredTempC,
             Limit = receipt.ActiveLimit,
             Direction = receipt.Action.Direction
         };
@@ -188,6 +220,8 @@ public class AutoCpuController
     {
         _pl1 = _initialPl1;
         _r.Reset();
+        _shaper.Reset();
+        LatestShaping = null;
         LatestReceipt = null;
     }
 

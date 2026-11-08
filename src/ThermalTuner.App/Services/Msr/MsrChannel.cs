@@ -1,19 +1,17 @@
-using System.Reflection;
 using System.Security.Principal;
-using LibreHardwareMonitor.Hardware;
 using ThermalTuner.Core.Msr;
 
 namespace ThermalTuner.App.Services.Msr;
 
 public enum MsrStatus
 {
-    /// <summary>内核驱动未加载（未提权、被安全软件拦截或 DLL 版本不对）。</summary>
+    /// <summary>PawnIO 驱动未安装（设备对象不存在）。</summary>
     NotInstalled,
-    /// <summary>驱动句柄不可用 / MSR 读测试失败。</summary>
+    /// <summary>驱动已装但设备打不开 / 模块加载失败。</summary>
     DriverUnavailable,
-    /// <summary>缺少管理员权限。</summary>
+    /// <summary>缺少管理员权限（PawnIO 设备 ACL 只允许 SYSTEM 与 Administrators）。</summary>
     NoAdmin,
-    /// <summary>LHM 程序集不提供 Ring0 MSR 接口。</summary>
+    /// <summary>模块缺失或为只读版本（不含 ioctl_write_msr）。</summary>
     ModuleUnavailable,
     /// <summary>可读，但不可写（固件锁定或写入被拒）。</summary>
     ReadOnly,
@@ -22,26 +20,31 @@ public enum MsrStatus
 }
 
 /// <summary>
-/// MSR 访问通道 —— 复用 LibreHardwareMonitor 0.9.4 自带的 WinRing0 内核驱动。
+/// MSR 访问通道 —— **PawnIO 后端**（v0.5.1 起唯一后端）。
 ///
-/// 背景（v0.4.1 修复）：
-///   LHM 0.9.4 的 Ring0 提供 ReadMsr/WriteMsr，可真实读写 0x610 / 0x774 / 0x1AD / 0x150；
-///   LHM 0.9.6 起后端改为 PawnIO，随包 IntelMSR 模块只有 ioctl_read_msr（只读），
-///   直接升级会让「写入链路」凭空消失。本项目因此固定引用 0.9.4。
+/// 为什么废弃 WinRing0：
+///   OpenLibSys 的 WinRing0 已停止维护，1.2.0.5（2008 年编译）是最终版本，
+///   且漏洞是设计性的（设备 ACL 宽松 + 无调用者校验，暴露任意 MSR 写与物理内存读写，
+///   CVE-2023-1048）。它被列入微软易受攻击驱动名单，Defender / 火绒会按哈希删除，
+///   产品无法依赖它长期可用，因此不再保留降级路径。
 ///
-/// 能力探测顺序：管理员 → Ring0 接口 → Open 驱动 → 读 0x610 → 检查 lock 位。
-/// 启动时不做任何写操作；写能力在首次应用时由回读校验确认（见 MsrGuard）。
+/// PawnIO 的不同：
+///   驱动本体由微软 WHQL 签名（Microsoft Windows Hardware Compatibility Publisher），
+///   只执行**已签名白名单模块**；实际硬件操作由模块内的白名单函数完成，
+///   调用方拿不到「任意 MSR / 任意物理内存」这种能力。
+///   IntelMSR 模块的写白名单包含 MSR_PKG_POWER_LIMIT(0x610)、MSR_OC_MAILBOX(0x150)、
+///   MSR_VR_CURRENT_CONFIG、MSR_MISC_FEATURE_CONTROL —— 本项目所需能力均在名单内。
+///
+/// 能力探测顺序：管理员 → 设备句柄 → 模块加载 → 模块含写接口 → 读 0x610 → 检查 lock 位。
+/// 启动时不做任何写操作；写能力由首次应用时的回读校验确认（见 MsrGuard）。
 /// </summary>
 public sealed class MsrChannel : IDisposable
 {
     private static readonly object ProbeGate = new();
-    private static Type? _ring0Type;
-    private static MethodInfo? _readMsr;
-    private static MethodInfo? _writeMsr;
-    private static MethodInfo? _open;
-    private static PropertyInfo? _isOpen;
-    private static bool _probed;
-    private static string _probeError = string.Empty;
+    private static bool _elevationChecked;
+    private static bool _elevated;
+
+    private PawnIoMsrBackend? _backend;
 
     private MsrChannel(MsrStatus status, string detail)
     {
@@ -54,210 +57,131 @@ public sealed class MsrChannel : IDisposable
     public bool CanWrite => Status == MsrStatus.Writable;
 
     /// <summary>后端名称（诊断报告用）。</summary>
-    /// <summary>运行时探测的后端名：不再把 0.9.4 写死，环境自检据此判断真实后端能力。</summary>
     public static string BackendName
     {
         get
         {
-            string v = typeof(Computer).Assembly.GetName().Version?.ToString() ?? "未知";
-            EnsureProbed();
-            return _writeMsr is not null
-                ? $"LHM {v} / WinRing0 (Ring0.WriteMsr)"
-                : $"LHM {v} / 只读后端（无 Ring0.WriteMsr）";
+            var backend = PawnIoMsrBackend.Shared();
+            if (backend is null) return "PawnIO（不可用）";
+            return PawnIoMsrBackend.SupportsWrite
+                ? $"PawnIO / IntelMSR（{PawnIoMsrBackend.ModuleSource}）"
+                : $"PawnIO / 只读模块（{PawnIoMsrBackend.ModuleSource}）";
         }
     }
 
-    /// <summary>运行期发现不可写（如驱动拒绝）时自我降级，UI 据此隐藏写入入口。</summary>
+    /// <summary>运行期发现不可写（如模块白名单拒绝）时自我降级，UI 据此隐藏写入入口。</summary>
     public void MarkNotWritable(string reason)
     {
         Status = MsrStatus.ReadOnly;
         Detail = reason;
     }
 
-    /// <summary>反射绑定 Ring0 的 MSR 读写接口（进程内只做一次）。</summary>
-    private static bool EnsureProbed()
-    {
-        lock (ProbeGate)
-        {
-            if (_probed) return _readMsr is not null && _writeMsr is not null;
-            _probed = true;
-
-            try
-            {
-                var asm = typeof(Computer).Assembly;
-                _ring0Type = asm.GetType("LibreHardwareMonitor.Hardware.Ring0");
-                if (_ring0Type is null)
-                {
-                    _probeError = "当前 LHM 程序集不含 Ring0 类型（这是 0.9.6+ PawnIO 分支，需回退到 0.9.4）";
-                    return false;
-                }
-
-                foreach (var m in _ring0Type.GetMethods(
-                             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                {
-                    var ps = m.GetParameters();
-                    if (m.Name == "ReadMsr" && ps.Length == 3 &&
-                        ps[0].ParameterType == typeof(uint) && ps[1].IsOut && ps[2].IsOut)
-                        _readMsr = m;
-                    else if (m.Name == "WriteMsr" && ps.Length == 3 &&
-                             ps.All(p => p.ParameterType == typeof(uint)))
-                        _writeMsr = m;
-                    else if (m.Name == "Open" && ps.Length == 0)
-                        _open = m;
-                }
-
-                _isOpen = _ring0Type.GetProperty("IsOpen",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-
-                if (_readMsr is null || _writeMsr is null)
-                    _probeError = "LHM Ring0 未提供 MSR 读写接口（版本不兼容）";
-            }
-            catch (Exception ex)
-            {
-                _probeError = "探测 Ring0 失败：" + ex.GetBaseException().Message;
-            }
-
-            return _readMsr is not null && _writeMsr is not null;
-        }
-    }
-
-    /// <summary>列出 Ring0 暴露的 MSR 相关方法（替代 PawnIO 模块函数探测）。</summary>
+    /// <summary>列出模块导出的函数名（诊断用，替代旧的 Ring0 方法枚举）。</summary>
     public static string[] ListFunctions()
     {
-        if (!EnsureProbed() || _ring0Type is null) return Array.Empty<string>();
-        try
-        {
-            return _ring0Type
-                .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-                .Where(m => m.Name.Contains("Msr", StringComparison.OrdinalIgnoreCase)
-                            || m.Name is "Open" or "Close")
-                .Select(m => $"{m.ReturnType.Name} {m.Name}(" +
-                             string.Join(", ", m.GetParameters().Select(p =>
-                                 $"{(p.IsOut ? "out " : "")}{p.ParameterType.Name} {p.Name}")) + ")")
-                .ToArray();
-        }
-        catch { return Array.Empty<string>(); }
+        var backend = PawnIoMsrBackend.Shared();
+        return backend is null
+            ? Array.Empty<string>()
+            : PawnIoMsrBackend.Functions.ToArray();
     }
 
     private static bool IsElevated()
     {
+        if (_elevationChecked) return _elevated;
+        _elevationChecked = true;
         try
         {
             using var id = WindowsIdentity.GetCurrent();
-            return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
+            _elevated = new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
         }
-        catch { return false; }
-    }
-
-    private static bool Ring0IsOpen()
-    {
-        try { return _isOpen?.GetValue(null) is bool b && b; }
-        catch { return false; }
+        catch { _elevated = false; }
+        return _elevated;
     }
 
     public static MsrChannel Open()
     {
+        var backend = PawnIoMsrBackend.Shared();
+
         if (!IsElevated())
             return new MsrChannel(MsrStatus.NoAdmin,
-                "需要管理员权限（MSR 读写要求 ring0 内核驱动）");
+                backend is null
+                    ? "需要管理员权限（PawnIO 设备只允许 SYSTEM 与 Administrators 访问）"
+                    : "需要管理员权限才能写入 MSR（只读探测已通过）");
 
-        if (!EnsureProbed())
-            return new MsrChannel(MsrStatus.ModuleUnavailable, _probeError);
-
-        // Computer.Open() 会释放并加载内嵌的 WinRing0 驱动。HardwareTelemetry 通常已经 Open，
-        // 这里只做 IsOpen 兜底，绝不调用 Computer.Close()（会关掉共享的 Ring0 句柄）。
-        if (!Ring0IsOpen())
+        if (backend is null)
         {
-            try
-            {
-                _open?.Invoke(null, null);
-            }
-            catch (Exception ex)
-            {
-                return new MsrChannel(MsrStatus.DriverUnavailable,
-                    "Ring0.Open 失败：" + ex.GetBaseException().Message +
-                    "（检查内存完整性 HVCI / 安全软件是否拦截内核驱动）");
-            }
+            string why = PawnIoMsrBackend.Failure;
+            MsrStatus status = why.Contains("设备对象不存在", StringComparison.Ordinal)
+                ? MsrStatus.NotInstalled
+                : why.Contains("模块", StringComparison.Ordinal)
+                    ? MsrStatus.ModuleUnavailable
+                    : MsrStatus.DriverUnavailable;
+            return new MsrChannel(status, why);
         }
 
-        if (!Ring0IsOpen())
-            return new MsrChannel(MsrStatus.DriverUnavailable,
-                "WinRing0 驱动未加载（检查管理员权限、HVCI 内存完整性、Defender 拦截）");
-
-        var channel = new MsrChannel(MsrStatus.ReadOnly, "已就绪");
+        var channel = new MsrChannel(MsrStatus.ReadOnly, "已就绪") { _backend = backend };
 
         if (!channel.TryRead(RaplPowerLimit.MsrPkgPowerLimit, out ulong current))
         {
             return new MsrChannel(MsrStatus.DriverUnavailable,
-                "读取 MSR 0x610 失败（驱动未就绪或被虚拟化/安全软件拦截）");
+                "读取 MSR 0x610 失败（模块已加载但寄存器不可读，可能被虚拟化拦截）");
         }
 
         var decoded = RaplPowerLimit.Decode(current);
         if (decoded.Locked)
             return new MsrChannel(MsrStatus.ReadOnly,
-                $"0x610 的 lock 位已置位（固件锁定）：{RaplPowerLimit.Describe(current)}");
+                $"0x610 的 lock 位已置位（固件锁定）：{RaplPowerLimit.Describe(current)}")
+            { _backend = backend };
 
         // 刻意不在启动时做写探测：避免工具一启动就写 MSR。
         // 真实可写性由首次「应用」的回读校验确认，失败即自动回滚（G-03）。
         return new MsrChannel(MsrStatus.Writable,
-            $"可读可写（{RaplPowerLimit.Describe(current)}；写入以回读校验确认）");
+            $"可读可写（{RaplPowerLimit.Describe(current)}；写入以回读校验确认）")
+        { _backend = backend };
     }
 
     public bool TryRead(uint msr, out ulong value)
     {
         value = 0;
-        if (_readMsr is null || !Ring0IsOpen()) return false;
-        try
-        {
-            var args = new object[] { msr, 0u, 0u };
-            if (_readMsr.Invoke(null, args) is not bool ok || !ok) return false;
-            value = ((ulong)(uint)args[2] << 32) | (uint)args[1];
-            return true;
-        }
-        catch { return false; }
+        var backend = _backend ?? PawnIoMsrBackend.Shared();
+        return backend is not null && backend.ReadMsr(msr, out value, out _);
     }
 
     public bool TryWrite(uint msr, ulong value) => TryWrite(msr, value, out _);
 
     public bool TryWrite(uint msr, ulong value, out int hresult)
     {
-        hresult = 0;
-        if (_writeMsr is null || !Ring0IsOpen())
+        hresult = PawnIoMsrBackend.HrDeviceMissing;
+        var backend = _backend ?? PawnIoMsrBackend.Shared();
+        if (backend is null)
         {
-            hresult = unchecked((int)0x80004005);
             LastWriteHResult = hresult;
             LastWriteReturned = 0;
             return false;
         }
 
-        try
-        {
-            uint eax = (uint)(value & 0xFFFFFFFF);
-            uint edx = (uint)(value >> 32);
-            bool ok = _writeMsr.Invoke(null, new object[] { msr, eax, edx }) is bool r && r;
-            hresult = ok ? 0 : unchecked((int)0x80004005);
-            LastWriteHResult = hresult;
-            LastWriteReturned = 0;
-            return ok;
-        }
-        catch
-        {
-            hresult = unchecked((int)0x80004005);
-            LastWriteHResult = hresult;
-            LastWriteReturned = 0;
-            return false;
-        }
+        bool ok = backend.WriteMsr(msr, value, out hresult);
+        LastWriteHResult = hresult;
+        LastWriteReturned = 0;
+        return ok;
     }
 
-    /// <summary>最近一次写入的 HRESULT 与返回条目数（诊断用；Ring0 后端固定为 0）。</summary>
+    /// <summary>最近一次写入的 HRESULT 与返回条目数（诊断用；PawnIO 后端固定 0 条）。</summary>
     public int LastWriteHResult { get; private set; }
     public nuint LastWriteReturned { get; private set; }
 
-    /// <summary>
-    /// 兼容旧的函数探测入口：Ring0 后端没有 Pawn 模块函数概念。
-    /// 返回 0x80070002 表示「不是模块函数」，真实能力请用 ListFunctions()。
-    /// </summary>
-    public int InvokeRaw(string function, ulong[] input) => unchecked((int)0x80070002);
+    /// <summary>直接执行模块函数（诊断 / 未封装寄存器用）。返回 0 表示成功，否则为 HRESULT。</summary>
+    public int InvokeRaw(string function, ulong[] input) =>
+        InvokeRaw(function, input, out _);
+
+    /// <summary>直接执行模块函数并取回 ulong64 返回值。</summary>
+    public int InvokeRaw(string function, ulong[] input, out ulong output)
+    {
+        output = 0;
+        var backend = _backend ?? PawnIoMsrBackend.Shared();
+        if (backend is null) return PawnIoMsrBackend.HrDeviceMissing;
+        return backend.ExecuteRaw(function, input, out output);
+    }
 
     /// <summary>读取 0x610 当前解码值（只读，安全）。</summary>
     public bool TryReadLimits(out RaplLimits limits)
@@ -276,15 +200,12 @@ public sealed class MsrChannel : IDisposable
         MsrStatus.Writable => "可写",
         MsrStatus.ReadOnly => "只读",
         MsrStatus.NoAdmin => "需管理员",
-        MsrStatus.NotInstalled => "驱动未加载",
+        MsrStatus.NotInstalled => "驱动未安装",
         MsrStatus.DriverUnavailable => "驱动不可用",
-        MsrStatus.ModuleUnavailable => "接口不可用",
+        MsrStatus.ModuleUnavailable => "模块不可用",
         _ => "未知"
     };
 
-    /// <summary>
-    /// 不主动关闭 Ring0：驱动由 HardwareTelemetry 的 Computer 实例共享，
-    /// 过早 Close 会让正在采样的温度/频率传感器失效。进程退出时由系统回收。
-    /// </summary>
-    public void Dispose() { /* no-op：共享静态 Ring0 句柄 */ }
+    /// <summary>PawnIO 设备句柄为进程级共享，此处不主动关闭（随进程退出回收）。</summary>
+    public void Dispose() { /* no-op：共享设备句柄 */ }
 }

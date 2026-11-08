@@ -19,6 +19,16 @@ public partial class DiagnosticsPage : UserControl
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Refresh();
 
+    /// <summary>管理员重新自检（无害写探测）。原「高级参数」页的按钮迁到诊断页。</summary>
+    private void EnvCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (Session is not { } s) return;
+        string result = s.RunFullEnvironmentCheck();
+        EnvCheckOutcome.Text = "环境自检：" + result;
+        EnvCheckOutcome.Visibility = Visibility.Visible;
+        Refresh();
+    }
+
     private void Refresh()
     {
         if (Session is not { } s) return;

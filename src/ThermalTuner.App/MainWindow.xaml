@@ -43,18 +43,16 @@
               </TextBlock>
             </StackPanel>
           </Border>
-          <TextBlock Text="v0.4.4" Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" />
+          <TextBlock Text="v0.5.1" Style="{StaticResource Label}" FontSize="11" Margin="0,10,0,0" />
         </StackPanel>
 
         <StackPanel Margin="0,4,0,0">
           <RadioButton x:Name="NavOverview" Style="{StaticResource NavItem}" GroupName="nav"
                        Content="概览" Tag="overview" IsChecked="True" Click="Nav_Click" />
           <RadioButton x:Name="NavTuning" Style="{StaticResource NavItem}" GroupName="nav"
-                       Content="智能调优" Tag="tuning" Click="Nav_Click" />
-          <RadioButton x:Name="NavMonitor" Style="{StaticResource NavItem}" GroupName="nav"
-                       Content="实时监控" Tag="monitor" Click="Nav_Click" />
+                       Content="智能微调" Tag="tuning" Click="Nav_Click" />
           <RadioButton x:Name="NavParams" Style="{StaticResource NavItem}" GroupName="nav"
-                       Content="高级参数" Tag="params" Click="Nav_Click" />
+                       Content="手工微调" Tag="params" Click="Nav_Click" />
           <RadioButton x:Name="NavDiagnostics" Style="{StaticResource NavItem}" GroupName="nav"
                        Content="诊断与日志" Tag="diagnostics" Click="Nav_Click" />
           <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" GroupName="nav"
@@ -80,7 +78,7 @@
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock x:Name="PageTitle" Style="{StaticResource H1}" Text="概览" />
             <TextBlock x:Name="PageSub" Style="{StaticResource Label}" Margin="12,4,0,0"
-                       Text="一屏看清温度、功耗与最新决策" />
+                       Text="全部监控指标、统一时序图、决策凭证与采样明细" />
           </StackPanel>
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">

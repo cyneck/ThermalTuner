@@ -3,13 +3,40 @@ using System.Text.Json;
 
 namespace ThermalTuner.App.Services;
 
+/// <summary>调优模式常量。持久化用字符串，避免枚举值变更导致旧配置反序列化失败。</summary>
+public static class TuningModes
+{
+    public const string Intelligent = "intelligent";
+    public const string Manual = "manual";
+
+    public static string Normalize(string? value) =>
+        string.Equals(value, Manual, StringComparison.OrdinalIgnoreCase) ? Manual : Intelligent;
+}
+
 /// <summary>用户设置（持久化到 %LOCALAPPDATA%\ThermalTuner\settings.json）。</summary>
 public sealed class AppSettings
 {
     public int IntervalMs { get; set; } = 1000;
     public string Profile { get; set; } = "balanced";
     public double CeilingC { get; set; } = 88.0;
-    /// <summary>D-01：向导确认后默认自动接管；未完成向导时保持只读。</summary>
+
+    // ---------------- v0.5.0 调优模式（单一真值源） ----------------
+    /// <summary>
+    /// 调优模式单一真值源：TuningModes.Intelligent / TuningModes.Manual。
+    /// 空字符串 = 旧版配置，启动时按「是否存在 L3 手动值」迁移：
+    /// 有值 → manual（保持旧行为，不擅自改成智能写）；无值 → intelligent。
+    /// </summary>
+    public string TuningMode { get; set; } = string.Empty;
+    /// <summary>
+    /// 升档冷却秒数（默认 20s，设置页可调，钳制 5~120s）。
+    /// 只约束「升档」写入，让 RAPL 的 PL1 平均功率窗口按 Tau 收敛；降档与高温降档不受限。
+    /// </summary>
+    public double RampUpCooldownSeconds { get; set; } = 20.0;
+    /// <summary>
+    /// v0.5.0 起语义变更：不再是「是否允许开始写」，而是
+    /// 「是否允许决策树在选中即下发之后，继续每拍动态微调」。
+    /// 选中档位 / 手工保存这两条显式事件通道不受它约束。
+    /// </summary>
     public bool AutoTakeover { get; set; }
     public bool RestoreOnExit { get; set; } = true;
     public bool MinimizeToTray { get; set; } = true;
@@ -43,6 +70,16 @@ public sealed class AppSettings
 
     /// <summary>是否已完成过首次安装启动的环境自检（决定是否需要弹依赖提示）。</summary>
     public bool EnvironmentChecked { get; set; }
+
+    // ---------------- 内置 EC 只读映射（可选覆盖） ----------------
+    // 0 = 使用 EcFanReader 里的本机校准默认值（寄存器 149 / 原始刻度 255~58）。
+    // 这些是「EC 档位刻度」映射，不是瓦数；换机型须用 --ec-probe 或 NBFC 配置重新确认。
+    /// <summary>风扇档位 EC 寄存器地址；0 = 用默认 149。</summary>
+    public int FanEcRegister { get; set; }
+    /// <summary>EC 原始值对应 0% 的刻度；0 = 用默认 255。</summary>
+    public double FanEcMinRaw { get; set; }
+    /// <summary>EC 原始值对应 100% 的刻度；0 = 用默认 58。</summary>
+    public double FanEcMaxRaw { get; set; }
 }
 
 /// <summary>

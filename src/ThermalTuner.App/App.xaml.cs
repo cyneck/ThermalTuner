@@ -14,6 +14,30 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // PawnIO 设备安装辅助服务（由 SCM 以 LocalSystem 启动，创建 Root 设备节点后退出）。
+        // 必须最先判断：服务会话里不能初始化 WPF 主窗口。
+        if (e.Args.Contains("--pawnio-svc", StringComparer.OrdinalIgnoreCase))
+        {
+            int rc = Services.Msr.PawnIoInstaller.RunServiceMode();
+            Shutdown(rc);
+            return;
+        }
+
+        // 驱动安装 / 修复：--install-driver 走命令行，GUI 里走诊断页按钮
+        if (e.Args.Contains("--install-driver", StringComparer.OrdinalIgnoreCase))
+        {
+            string outPath = GetArgValue(e.Args, "--out")
+                             ?? Path.Combine(Path.GetTempPath(), "thermalpilot-driver-install.txt");
+            var lines = new StringBuilder();
+            var result = Services.Msr.PawnIoInstaller.Install(s => lines.AppendLine(s));
+            lines.AppendLine($"结果: {result.State} / {result.Message}");
+            try { File.WriteAllText(outPath, lines.ToString(), Encoding.UTF8); } catch { }
+            Shutdown(result.State is Services.Msr.PawnIoInstallState.Ready
+                or Services.Msr.PawnIoInstallState.Installed ? 0 : 1);
+            return;
+        }
+
         // 带参数的启动都是命令行自检，不消耗「首次安装启动」标记
         EnvironmentSelfCheck.IsCommandLineMode = e.Args.Length > 0;
 
@@ -28,18 +52,19 @@ public partial class App : Application
         }
 
         // 离屏 UI 截图：把真实主窗口渲染成 PNG，用于界面核对与交付说明
-        // 用法：--capture-ui --page monitor --out ui.png
+        // 用法：--capture-ui --page overview --out ui.png
         if (e.Args.Contains("--capture-ui", StringComparer.OrdinalIgnoreCase))
         {
             string png = GetArgValue(e.Args, "--out")
                          ?? Path.Combine(Path.GetTempPath(), "thermaltuner-ui.png");
-            string page = GetArgValue(e.Args, "--page") ?? "monitor";
-            Shutdown(UiCapture.Run(png, page));
+            string page = GetArgValue(e.Args, "--page") ?? "overview";
+            int height = int.TryParse(GetArgValue(e.Args, "--height"), out int h) ? h : 840;
+            Shutdown(UiCapture.Run(png, page, height));
             return;
         }
 
-        // EC 只读自动判断：定位 NBFC 生效配置 → 读 EC 寄存器 → 判定风扇读数是否活跃
-        // 用法：--ec-probe --out report.txt [--seconds 6]（需管理员；只调用 read/dump/monitor）
+        // EC 只读诊断：内置端口读取自测（不依赖 NBFC）+ 可选 NBFC 交叉验证
+        // 用法：--ec-probe --out report.txt [--seconds 6]（内置 EC 读需管理员；绝不写 EC 寄存器）
         if (e.Args.Contains("--ec-probe", StringComparer.OrdinalIgnoreCase))
         {
             string report = GetArgValue(e.Args, "--out")

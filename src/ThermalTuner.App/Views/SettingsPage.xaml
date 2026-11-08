@@ -25,8 +25,29 @@
             </ComboBox>
           </Grid>
 
-          <CheckBox x:Name="TakeoverBox" Content="验证通过后自动接管功耗参数（D-01）"
+          <Grid Margin="0,12,0,0">
+            <TextBlock Text="升档冷却" Style="{StaticResource Label}" VerticalAlignment="Center"
+                       ToolTip="只约束升档写入，让 RAPL 按 Tau 窗口收敛；降档与高温降档立即放行" />
+            <ComboBox x:Name="CooldownBox" Width="120" Height="30" HorizontalAlignment="Right"
+                      VerticalContentAlignment="Center" SelectionChanged="Cooldown_Changed">
+              <ComboBoxItem Content="5 s" Tag="5" />
+              <ComboBoxItem Content="10 s" Tag="10" />
+              <ComboBoxItem Content="15 s" Tag="15" />
+              <ComboBoxItem Content="20 s（默认）" Tag="20" />
+              <ComboBoxItem Content="30 s" Tag="30" />
+              <ComboBoxItem Content="45 s" Tag="45" />
+              <ComboBoxItem Content="60 s" Tag="60" />
+            </ComboBox>
+          </Grid>
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextTertiary}"
+                     Text="默认 20s（本机实测热惯性 5~15s + 余量，与 Tau 16~32s 同量级）。自适应冷却公式属 P1 研究项，本期只做热事件埋点，不实现未验证系数。" />
+
+          <CheckBox x:Name="TakeoverBox" Content="智能模式下允许决策树持续动态微调"
                     Style="{StaticResource Switch}" Margin="0,14,0,0" Click="Toggle_Click" />
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextTertiary}"
+                     Text="关闭后，选中档位仍立即下发一次，只是决策树不再每拍动态改 PL1。" />
           <CheckBox x:Name="RestoreBox" Content="退出程序时恢复 MSR 原值"
                     Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click" />
           <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘（采样继续）"
@@ -42,6 +63,22 @@
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
                        Text="1s 采样是热控的推荐值：更慢会漏掉瞬时 PROCHOT，更快对体验没有意义。" />
           </Border>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <StackPanel>
+          <TextBlock Text="调优模式（单一真值源）" Style="{StaticResource H2}" />
+          <TextBlock x:Name="ModeLine" Style="{StaticResource Mono}" FontSize="11" Margin="0,8,0,0"
+                     TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ModeStatusText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextTertiary}" />
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Text="智能微调：选中档位立即下发，之后阶梯式低频动态微调。手工微调：参数由手工页保存并下发，智能档位与决策树只演算。两者互斥，切换会二次确认。" />
+          <Button x:Name="SwitchModeButton" Content="切回智能微调" Style="{StaticResource GhostButton}"
+                  Margin="0,10,0,0" HorizontalAlignment="Left" Click="SwitchMode_Click"
+                  Visibility="Collapsed" />
         </StackPanel>
       </Border>
 
@@ -119,7 +156,7 @@
           <TextBlock Style="{StaticResource Label}" Margin="0,8,0,0" TextWrapping="Wrap"
                      Text="ThermalTuner · 决策树驱动的 CPU 热约束调优。实测标定与手动微调值保存在本机，开机后重放到寄存器；固件默认值不可持久化，退出恢复原值。" />
           <TextBlock Style="{StaticResource Mono}" FontSize="11" Margin="0,10,0,0"
-                     Foreground="{StaticResource TextTertiary}" Text="build 0.4.0 · net8.0-windows · WPF" />
+                     Foreground="{StaticResource TextTertiary}" Text="v0.5.1 · net8.0-windows · WPF" />
         </StackPanel>
       </Border>
     </StackPanel>

@@ -24,11 +24,19 @@ public readonly record struct TelemetrySample(
     string GpuSource = "",
     // 风扇读数来源：LHM 实测 / EC 直读(ec-probe) / NBFC 服务；空串 = 不可读。
     string FanSource = "",
-    double FanRawValue = double.NaN);
+    double FanRawValue = double.NaN,
+    // EC 原始值恒定检测：连续多少次真实采样未变化 / 是否已判定「疑似非实时」。
+    int FanStagnantReads = 0,
+    bool FanStagnant = false,
+    // 诊断对照：LHM CPU Total 是线程级估算、随 Update 窗口剧烈跳动，
+    // 口径与任务管理器不同，仅用于自检报告，不进界面 / 决策树 / 功耗估算。
+    double LhmCpuTotal = double.NaN,
+    // 独显核心温度（LHM GPU Core）；NaN = 本机不可读。
+    double GpuTempC = double.NaN);
 
 /// <summary>
 /// 只读遥测源。三级回退，任何一级失败都不中断程序：
-///   1. LibreHardwareMonitor 0.9.4（WinRing0 内核驱动，可读 CPU 封装温度 / 包功耗 / 核心频率，需管理员）
+///   1. LibreHardwareMonitor 0.9.6（PawnIO 内核驱动，可读 CPU 封装温度 / 包功耗 / 核心频率，需管理员）
 ///   2. ACPI 热区 WMI（部分机型可用，粒度为整区）
 ///   3. GetSystemTimes 计算负载（始终可用）
 /// 研发注意：本类与 src/ThermalTuner.Monitor/TelemetrySource.cs 逻辑同源，
@@ -91,6 +99,14 @@ public sealed class HardwareTelemetry : IDisposable
         {
             _driverOk = false;
         }
+
+        // 构造过程（Computer.Open / 枚举硬件 / 加载 PawnIO 模块）本身占用 CPU。
+        // 若不重置差分基准，首拍会把启动开销算进「总时间」，读数虚高
+        // （管理员态实测首拍 68.5%，稳态仅十余 %）。以构造结束时刻作为第一拍起点。
+        if (GetSystemTimes(out long idle2, out long kernel2, out long user2))
+        {
+            _prevIdle = idle2; _prevKernel = kernel2; _prevUser = user2;
+        }
     }
 
     private static int GpuRank(IHardware hw) => hw.HardwareType == HardwareType.GpuIntel ? 1 : 2;
@@ -131,6 +147,14 @@ public sealed class HardwareTelemetry : IDisposable
 
     public TelemetrySample Read()
     {
+        // 每拍都推进系统计时差分，窗口恒为「上一拍 → 本拍」：
+        // GetSystemTimes 的 (总时间 − 空闲时间) / 总时间 与任务管理器的系统级 CPU 时间占比同源，
+        // 按全部逻辑核汇总后天然落在 0~100。LHM 的 CPU Total 是线程级负载估算，
+        // 依赖两次 Update() 之间的窗口，实测同一秒内可从 16% 跳到 50%+（自检报告里 49.6%），
+        // 与温度/功耗/风扇读数自相矛盾，故只保留作诊断对照，不再作为 LoadPercent。
+        // 注意：不能只在回退路径调用，否则差分基准长期不推进，回退时会拿到「自启动以来」的平均值。
+        double systemLoad = ReadLoadFromSystemTimes();
+
         // RAPL 每拍只读一次：能量计数器是累加量，多读会打乱 Δt
         double raplW = _rapl is not null && _rapl.TrySample(out double rw) ? rw : double.NaN;
 
@@ -143,21 +167,24 @@ public sealed class HardwareTelemetry : IDisposable
 
                 double temp = PickTemperature();
                 double lhmPower = PickSensor(SensorType.Power, "Package");
-                double load = PickSensor(SensorType.Load, "CPU Total");
+                double lhmTotal = Pct(PickSensor(SensorType.Load, "CPU Total"));  // 诊断对照，不进决策
+                double load = double.IsNaN(systemLoad) ? lhmTotal : systemLoad;
+                if (double.IsNaN(load)) load = 0;
                 double clock = PickMaxClock();
 
                 if (!double.IsNaN(temp))
                 {
-                    if (double.IsNaN(load)) load = ReadLoadFromSystemTimes();
-
                     // 优先级：LHM 传感器 > RAPL 实测 > 按负载估算
                     if (!double.IsNaN(lhmPower))
-                        return WithExtras(new TelemetrySample(temp, load, lhmPower, clock, true, "LHM"));
+                        return WithExtras(new TelemetrySample(temp, load, lhmPower, clock, true, "LHM",
+                            LhmCpuTotal: lhmTotal));
 
                     if (!double.IsNaN(raplW))
-                        return WithExtras(new TelemetrySample(temp, load, raplW, clock, true, "RAPL"));
+                        return WithExtras(new TelemetrySample(temp, load, raplW, clock, true, "RAPL",
+                            LhmCpuTotal: lhmTotal));
 
-                    return WithExtras(new TelemetrySample(temp, load, EstimatePower(load), clock, false, "LHM/估算"));
+                    return WithExtras(new TelemetrySample(temp, load, EstimatePower(load), clock, false,
+                        "LHM/估算", LhmCpuTotal: lhmTotal));
                 }
             }
             catch
@@ -166,9 +193,9 @@ public sealed class HardwareTelemetry : IDisposable
             }
         }
 
-        // 回退：ACPI 温度 + 系统负载；功耗优先 RAPL，其次估算
+        // 回退：ACPI 温度 + 同一份系统级负载；功耗优先 RAPL，其次估算
         double t = ReadWmiTemperature();
-        double l = ReadLoadFromSystemTimes();
+        double l = double.IsNaN(systemLoad) ? 0 : systemLoad;
 
         if (!double.IsNaN(raplW))
             return WithExtras(new TelemetrySample(t, l, raplW, 0, true, "RAPL"));
@@ -177,9 +204,23 @@ public sealed class HardwareTelemetry : IDisposable
             double.IsNaN(t) ? "SystemTimesOnly" : "WMI"));
     }
 
+    /// <summary>
+    /// 百分比类指标统一归一化到 0~100。NaN 表示「本机读不到」，必须原样保留给 UI 显示 N/A。
+    /// 这是遥测离开采集层的唯一出口，所有消费者（指标卡 / 时序图 / 决策树 / CSV）用同一份合法值。
+    /// </summary>
+    private static double Pct(double v) => double.IsNaN(v) ? v : Math.Clamp(v, 0.0, 100.0);
+
     /// <summary>把 GPU / 风扇扩展指标附加到基础采样；任何异常都返回 NaN，不打断主链路。</summary>
     private TelemetrySample WithExtras(TelemetrySample s)
     {
+        // 出采样层前的最后一道归一化：覆盖所有 Read() 返回路径（含异常 catch 分支）。
+        s = s with
+        {
+            LoadPercent = Pct(s.LoadPercent),
+            GpuLoadPercent = Pct(s.GpuLoadPercent),
+            GpuMemoryPercent = Pct(s.GpuMemoryPercent)
+        };
+
         try
         {
             var g = ReadGpu();
@@ -187,8 +228,10 @@ public sealed class HardwareTelemetry : IDisposable
             double rpm = f.Rpm, pct = f.Pct;
             string fanSource = "LHM 实测 · 只读";
             double fanRaw = double.NaN;
+            int extReads = 0;
+            bool extStagnant = false;
 
-            // LHM 0.9.4 不支持部分笔记本主板的 EC 传感器（本机 HP 838F 即如此）。
+            // LHM 不支持部分笔记本主板的 EC 传感器（本机 HP 838F 即如此）。
             // 此时用 NBFC / ec-probe 只读采集真实风扇运行百分比，绝不拿决策树演算值填充。
             if (double.IsNaN(rpm) && double.IsNaN(pct))
             {
@@ -198,22 +241,28 @@ public sealed class HardwareTelemetry : IDisposable
                     pct = ext.Percent;
                     fanSource = ext.Source;
                     fanRaw = ext.RawValue;
+                    extReads = ext.StagnantReads;
+                    extStagnant = ext.Stagnant;
                 }
                 else fanSource = string.Empty;
             }
 
             return s with
             {
-                GpuLoadPercent = g.Load,
-                GpuMemoryPercent = g.MemPct,
+                GpuLoadPercent = Pct(g.Load),
+                GpuMemoryPercent = Pct(g.MemPct),
                 GpuMemoryUsedMb = g.UsedMb,
                 GpuMemoryTotalMb = g.TotalMb,
                 GpuName = g.Name,
                 GpuSource = g.Source,
+                GpuTempC = g.TempC,
                 FanRpm = rpm,
-                FanControlPercent = pct,
+                // FanPercentCodec 已钳到 0~100；这里再过一道，保证与 CPU/GPU 同一口径。
+                FanControlPercent = Pct(pct),
                 FanSource = fanSource,
-                FanRawValue = fanRaw
+                FanRawValue = fanRaw,
+                FanStagnantReads = extReads,
+                FanStagnant = extStagnant
             };
         }
         catch
@@ -226,19 +275,22 @@ public sealed class HardwareTelemetry : IDisposable
     /// GPU 使用率与显存占用率。优先独显的精确传感器（GPU Core / GPU Memory）；
     /// 核显回退到 D3D 负载峰值与共享显存 Used/Total。NaN 表示本机读不到。
     /// </summary>
-    private (double Load, double MemPct, double UsedMb, double TotalMb, string Name, string Source) ReadGpu()
+    private (double Load, double MemPct, double UsedMb, double TotalMb, string Name, string Source, double TempC) ReadGpu()
     {
         foreach (var gpu in _gpus)
         {
             try { gpu.Update(); } catch { continue; }
 
             double load = double.NaN, memPct = double.NaN, used = double.NaN, total = double.NaN;
+            double gpuTemp = double.NaN;
             foreach (var s in gpu.Sensors)
             {
                 if (s.Value is not float v) continue;
                 string name = s.Name;
 
-                if (s.SensorType == SensorType.Load &&
+                if (s.SensorType == SensorType.Temperature &&
+                    name.Equals("GPU Core", StringComparison.OrdinalIgnoreCase)) gpuTemp = v;
+                else if (s.SensorType == SensorType.Load &&
                     name.Equals("GPU Core", StringComparison.OrdinalIgnoreCase)) load = v;
                 else if (s.SensorType == SensorType.Load &&
                          name.Equals("GPU Memory", StringComparison.OrdinalIgnoreCase)) memPct = v;
@@ -262,14 +314,15 @@ public sealed class HardwareTelemetry : IDisposable
 
             if (!double.IsNaN(load) || !double.IsNaN(memPct))
                 return (load, memPct, used, total, gpu.Name,
-                        gpu.HardwareType == HardwareType.GpuIntel ? "D3D/共享显存" : "LHM GPU");
+                        gpu.HardwareType == HardwareType.GpuIntel ? "D3D 引擎峰值（核显）" : "NVAPI · GPU Core",
+                        gpuTemp);
         }
-        return (double.NaN, double.NaN, double.NaN, double.NaN, string.Empty, string.Empty);
+        return (double.NaN, double.NaN, double.NaN, double.NaN, string.Empty, string.Empty, double.NaN);
     }
 
     /// <summary>
     /// 风扇实测：SensorType.Fan = RPM，SensorType.Control = 控制百分比。
-    /// 部分笔记本主板不被 LHM 0.9.4 支持（本机 HP 838F 即如此），此时返回 NaN，
+    /// 部分笔记本主板不被 LHM 支持（本机 HP 838F 即如此），此时返回 NaN，
     /// 由 WithExtras 回退到 NBFC / ec-probe 的只读 EC 采集；全不可读时 UI 才显示 N/A。
     /// 本类只读，从不写风扇 / EC / PWM。
     /// </summary>

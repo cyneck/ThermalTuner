@@ -45,10 +45,9 @@ internal static class Shots
             {
                 ("01-overview.png", () => new OverviewPage()),
                 ("02-tuning.png", () => new TuningPage()),
-                ("03-monitor.png", () => new MonitorPage()),
-                ("04-params.png", () => new ParamsPage()),
-                ("05-diagnostics.png", () => new DiagnosticsPage()),
-                ("06-settings.png", () => new SettingsPage())
+                ("03-params.png", () => new ParamsPage()),
+                ("04-diagnostics.png", () => new DiagnosticsPage()),
+                ("05-settings.png", () => new SettingsPage())
             };
 
             foreach (var (file, factory) in pages)
@@ -122,9 +121,7 @@ internal static class Shots
         {
             temp = Math.Clamp(temp + (rnd.NextDouble() - 0.42) * 2.2, 42, 90);
             pl1 = Math.Clamp(pl1 + (rnd.NextDouble() - 0.45) * 5, 30, 88);
-            s.TempHistory.Add(Math.Round(temp, 1));
-            s.Pl1History.Add(Math.Round(pl1, 1));
-            s.PowerHistory.Add(Math.Round(pl1 * 0.6, 1));
+            s.AppendDemoHistory(Math.Round(temp, 1), Math.Round(pl1, 1), Math.Round(pl1 * 0.6, 1));
         }
 
         s.Decisions.Add(new DecisionRow("10:21:08", "bottleneck_arbiter", "[功耗墙突破] 尚有 34.0°C 安全余量，升功耗至 41.0W", "41.0W ↑", "↑", "PowerWall", "safety → light-load → predictive → ceiling → arbiter"));

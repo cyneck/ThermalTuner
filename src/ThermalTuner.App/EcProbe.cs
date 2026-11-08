@@ -9,30 +9,73 @@ using ThermalTuner.App.Services;
 namespace ThermalTuner.App;
 
 /// <summary>
-/// EC 自动判断（只读）：自动定位 NBFC → 读取生效配置 → 取风扇寄存器 →
-/// 用 ec-probe.exe read/dump/monitor 读 EC → 判定读数是否活跃、配置是否可信。
+/// EC 只读诊断：先做内置端口读取自测（不依赖任何第三方软件），
+/// 若 NBFC 仍在则追加 nbfc status / ec-probe read/dump/monitor 做交叉验证。
 ///
 /// 用法：ThermalTuner.App.exe --ec-probe --out report.txt [--seconds 6]
-/// 需要管理员（ec-probe 加载 EC 插件要求提权）；普通权限下会明确记录失败原因。
-/// 本命令只调用 ec-probe 的 read / dump / monitor，**绝不调用 write**。
+/// 内置 EC 读需要管理员（WinRing0 驱动已加载）；普通权限下会明确记录失败原因。
+/// 边界：内置路径只写 0x66=0x80 / 0x62=地址做读握手，绝不写 EC 寄存器内容；
+/// NBFC 路径只调用 read / dump / monitor，**绝不调用 write**。
 /// </summary>
 internal static class EcProbe
 {
     public static int Run(string outPath, int monitorSeconds)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("== NBFC / EC 只读自动判断 ==");
+        sb.AppendLine("== EC 只读诊断（内置端口读取 + 可选 NBFC 交叉验证） ==");
         sb.AppendLine($"时间        : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"命令边界    : 只执行 nbfc status 与 ec-probe read / dump / monitor；不执行 write，不写 EC。");
+        sb.AppendLine("命令边界    : 内置 EC 只写 0x66=0x80 / 0x62=地址做读握手，不写 EC 寄存器内容；" +
+                      "NBFC 路径只调 read / dump / monitor，不执行 write。");
+
+        // ---------- 0. 内置 EC 只读自测（NBFC 卸载后仍可完成） ----------
+        sb.AppendLine();
+        sb.AppendLine("== 0. 内置 EC 只读自测（不依赖 NBFC） ==");
+        var cfg = EcFanReader.Mapping();
+        sb.AppendLine($"映射        : 寄存器 {cfg.Reg} · 原始刻度 {cfg.Min:F0}~{cfg.Max:F0}（{cfg.Source}）");
+        var ec = EcPortReader.ReadByte((byte)cfg.Reg);
+        sb.AppendLine($"读结果      : Ok={ec.Ok} · Value={ec.Value} · Reason={ec.Reason}");
+        // 诊断放在读之后，才能反映驱动自加载是否真的尝试过
+        sb.AppendLine(EcPortReader.Diagnostics());
+        if (ec.Ok)
+        {
+            double p = EcFanReader.PercentFromRaw(ec.Value, cfg.Min, cfg.Max);
+            sb.AppendLine($"档位换算    : {(double.IsNaN(p) ? "无法换算" : $"{p:F2}%（EC 档位刻度，非 RPM）")}");
+
+            // 正面回答「是不是只在上电时读了一次」：连续 6 次直查原始字节（不经过运行时 2.2s 缓存）。
+            // 仅显式诊断命令执行；全程只读，不写 EC 寄存器内容。
+            var raws = new List<double>();
+            for (int i = 0; i < 6; i++)
+            {
+                var r = EcPortReader.ReadByte((byte)cfg.Reg);
+                raws.Add(r.Ok ? r.Value : double.NaN);
+                if (i < 5) Thread.Sleep(400);
+            }
+            sb.AppendLine("连续原始值  : " + string.Join(" / ",
+                raws.Select(v => double.IsNaN(v) ? "失败" : v.ToString("F0"))));
+            bool allSame = raws.All(v => !double.IsNaN(v)) && raws.Distinct().Count() == 1;
+            sb.AppendLine("实时性判定  : " + (allSame
+                ? "6 次读数完全相同 → 该寄存器当前不随状态变化；界面会标注「疑似非实时 · 非 RPM」"
+                : "读数有变化或存在失败 → 不能据此判定恒定，以运行时曲线为准"));
+            sb.AppendLine("界面口径    : 概览页显示 EC 原始字节 + 档位换算；运行时每 2.2s 真实读一次，连续 10 次不变才标注疑似非实时；非转速。");
+        }
+        else
+        {
+            sb.AppendLine("说明        : 需以管理员启动且 WinRing0 驱动已加载；普通权限下内置 EC 不可用。");
+        }
 
         string? dir = EcFanReader.FindDir();
         if (dir is null)
         {
-            sb.AppendLine("RESULT: SKIP（未找到 NBFC 安装目录，风扇指标回退 LHM 传感器）");
+            sb.AppendLine();
+            sb.AppendLine("== NBFC 交叉验证 ==");
+            sb.AppendLine("NBFC 未安装（已不依赖），跳过 1~6 节；内置 EC 只读自测已完成。");
+            sb.AppendLine();
+            sb.AppendLine("RESULT: PASS（只读诊断完成）");
             Flush(outPath, sb);
-            return 2;
+            return 0;
         }
-        sb.AppendLine($"安装目录    : {dir}");
+        sb.AppendLine();
+        sb.AppendLine($"安装目录    : {dir}（可选交叉验证）");
 
         // ---------- 1. 服务状态 ----------
         string status = EcFanReader.Status(dir);

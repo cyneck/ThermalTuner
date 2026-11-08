@@ -40,7 +40,11 @@ internal static class SmokeTest
             if (!profileRestored) failures++;
             sb.AppendLine($"档位持久化   : settings.json = {session.Settings.Profile} → " +
                           $"{(profileRestored ? "已正确恢复" : "恢复失败（档位与天花板会不一致）")}");
+            sb.AppendLine($"调优模式     : {session.TuningModeText}（settings={session.Settings.TuningMode}）");
+            sb.AppendLine($"升档冷却     : {session.Settings.RampUpCooldownSeconds:F0}s · {session.CooldownText}");
             sb.AppendLine($"自动写入闸门 : {session.AutoApplyGateText}");
+            sb.AppendLine($"模式状态条   : {session.ModeStatusText}");
+            sb.AppendLine($"最近下发     : {session.LastWriteText}");
             sb.AppendLine();
 
             sb.AppendLine("== 主循环（3 拍）==");
@@ -55,6 +59,15 @@ internal static class SmokeTest
 
             // 采样后再判定：CanCalibrate 依赖首个有效温度样本
             sb.AppendLine($"可否标定     : {session.CanCalibrate}（{session.CalibrationBlockedReason}）");
+
+            // v0.5.0「选中即生效」只验证下发计划（纯计算），绝不在这里写寄存器。
+            var plan = session.PrepareProfileApply("silent");
+            string pl1Text = double.IsNaN(plan.TargetPl1W) ? "待首拍重算" : $"{plan.TargetPl1W:F1}W";
+            sb.AppendLine($"选中计划     : {plan.ProfileLabel} · 天花板 {plan.CeilingC:F0}°C · " +
+                          $"目标 PL1 {pl1Text} · Δ {plan.DeltaW:+0;-0;0}W · " +
+                          $"需二次确认 {plan.NeedConfirmation} · 硬闸 {plan.HardBlocked}");
+            sb.AppendLine($"确认原因     : {plan.ConfirmReason}");
+            session.ClearPendingPlan();
             sb.AppendLine();
 
             sb.AppendLine("== 热模型 / 固件锚点 ==");
@@ -72,9 +85,8 @@ internal static class SmokeTest
             var pages = new (string Name, Func<FrameworkElement> Factory)[]
             {
                 ("概览", () => new OverviewPage()),
-                ("智能调优", () => new TuningPage()),
-                ("实时监控", () => new MonitorPage()),
-                ("高级参数", () => new ParamsPage()),
+                ("智能微调", () => new TuningPage()),
+                ("手工微调", () => new ParamsPage()),
                 ("诊断与日志", () => new DiagnosticsPage()),
                 ("设置", () => new SettingsPage())
             };

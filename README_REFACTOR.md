@@ -122,7 +122,7 @@ dotnet run --project tests/ThermalTuner.Core.Tests    # 仅单测
 dotnet run --project src/ThermalTuner.App             # 启动 WPF 界面
 ```
 
-### 实时监控
+### 控制台实时监控工具
 
 ```bash
 dotnet run --project src/ThermalTuner.Monitor -- --simulate --stress --seconds 60
@@ -145,9 +145,8 @@ ThermalTuner.Monitor.exe --diag
 
 | 页面 | 现状 |
 | :--- | :--- |
-| 概览 | 指标卡 + 温度/功耗曲线 + 最新决策凭证 + 决策流水 |
+| 概览 | 8 张去重指标卡（含风扇档位）+ 多序列统一时序图 + 最新决策凭证 + 决策流水 + 压测开关 / 采样明细 / CSV 导出（原「实时监控」页已合并删除） |
 | 智能调优 | 3 档模式、天花板滑块、在线热阻/预测稳态、两段式稳态标定（RAPL 实测功耗） |
-| 实时监控 | 连续采样大图、明细表、压测开关、CSV 导出 |
 | 高级参数 | 固件出厂默认 / 已保存软件优化值双锚点、PL1/PL2/Tau/EPP/睿频倍率、实读「当前生效」列 |
 | 诊断与日志 | 环境体检、传感器清单、事件中心 |
 | 设置 | 采样间隔、自动接管、允许写入 MSR、开机重放、退出恢复 |

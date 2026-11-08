@@ -16,7 +16,7 @@
       <Grid>
         <StackPanel>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="CPU 功耗参数" Style="{StaticResource H2}" />
+            <TextBlock Text="手工微调 · CPU 功耗参数" Style="{StaticResource H2}" />
             <Border x:Name="ModeChip" Style="{StaticResource Chip}" Background="{StaticResource BgSubtle}"
                     Margin="10,0,0,0">
               <TextBlock x:Name="ModeChipText" Style="{StaticResource Mono}" FontSize="11" Text="只读" />
@@ -28,6 +28,8 @@
                          Text="{Binding MsrSummary, Mode=OneWay}" />
             </Border>
           </StackPanel>
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Text="本页即「手工微调」：解锁后可编辑全部参数，「保存并下发」会立即写入寄存器并切换到手工模式，智能档位与决策树随即只演算、不覆盖你的值。环境自检与固件基线对照已迁到「诊断与日志」页。" />
           <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
             <TextBlock x:Name="MsrHint" Style="{StaticResource Label}" FontSize="11"
                        Foreground="{StaticResource TextTertiary}" Text="演练模式：只校验不写硬件。" />
@@ -36,6 +38,9 @@
                        Foreground="{StaticResource TextSecondary}"
                        ToolTip="{Binding CapabilityReportText, Mode=OneWay}" />
           </StackPanel>
+          <TextBlock Text="{Binding TuningModeText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextSecondary}" />
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -43,9 +48,6 @@
                   Click="Unlock_Click" />
           <Button Content="恢复默认" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
                   Click="Reset_Click" />
-          <Button Content="重新自检" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
-                  Click="EnvCheck_Click"
-                  ToolTip="管理员下补测写入能力（同值写回 / −10mV 后回零）；完整报告见「诊断与日志」" />
         </StackPanel>
       </Grid>
     </Border>
@@ -331,7 +333,7 @@
       </Border>
 
       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
-        <Button x:Name="ApplyButton" Content="应用（演练）" Style="{StaticResource PrimaryButton}"
+        <Button x:Name="ApplyButton" Content="保存并下发（演练）" Style="{StaticResource PrimaryButton}"
                 MinWidth="110" IsEnabled="False" Click="Apply_Click" />
         <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="Revert_Click" />
         <Button Content="恢复原值" Style="{StaticResource GhostButton}" Margin="8,0,0,0"

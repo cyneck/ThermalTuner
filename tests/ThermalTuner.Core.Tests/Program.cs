@@ -15,7 +15,11 @@ var suites = new (string Name, Action Run)[]
     ("StressScenario",     () => new StressScenarioTests().RunAllTests()),
     ("AdvancedParams",     () => new AdvancedParamsTests().RunAllTests()),
     ("ProfileEffect",      () => new ProfileEffectTests().RunAllTests()),
-    ("FanPercent",         () => new FanPercentTests().RunAllTests())
+    ("FanPercent",         () => new FanPercentTests().RunAllTests()),
+    ("FanStagnation",      () => new FanStagnationTests().RunAllTests()),
+    ("WriteScheduler",     () => new WriteSchedulerTests().RunAllTests()),
+    ("TrajectoryShaper",   () => new TrajectoryShaperTests().RunAllTests()),
+    ("ThermalEvent",       () => new ThermalEventTests().RunAllTests())
 };
 
 int failedSuites = 0;

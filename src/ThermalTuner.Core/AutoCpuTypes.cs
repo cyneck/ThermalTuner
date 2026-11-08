@@ -16,6 +16,12 @@ public class AutoCpuDecision
     public bool RConfident { get; set; }
     public string RQuality { get; set; } = "Low";
     public string Reason { get; set; } = string.Empty;
+    /// <summary>轨迹整形层的本拍说明（降档直通 / 同带拦截 / 跨带放行 / 安全直通）。</summary>
+    public string ShapingReason { get; set; } = string.Empty;
+    /// <summary>本拍升档是否被温度带门控暂缓（界面可显示「等温度跨带」）。</summary>
+    public bool GateHeld { get; set; }
+    /// <summary>整形后的滤波温度（°C）；NaN = 无有效读数。</summary>
+    public double FilteredTempC { get; set; } = double.NaN;
     public BindingLimit Limit { get; set; }
     public int Direction { get; set; } // -1 = 降能, 0 = 保持, +1 = 提速
 }

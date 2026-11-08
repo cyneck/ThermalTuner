@@ -19,7 +19,7 @@ namespace ThermalTuner.App.Services;
 /// · 自检决定「参数项能否获取」；能否真实写入由管理员 + 「允许写入 MSR」双开关决定，
 ///   普通权限下不把所有项判死，避免用户提权重启后仍被误禁。
 /// · 后端兼容以实测为准：0.9.6+ / PawnIO 只有只读接口，可作为「读取降级」，
-///   但不能替代 WinRing0 完成写入；能否绕过 HVCI 拦截待实测，不作兼容性承诺。
+///   写入由独立的 PawnIO + IntelMSR 模块承担，与 LHM 传感器侧互不依赖。
 /// </summary>
 public sealed class CapabilitySnapshot
 {
@@ -120,22 +120,23 @@ public static class EnvironmentSelfCheck
         snap.LhmVersion = asm.GetName().Version?.ToString() ?? "未知";
         snap.Backend = MsrChannel.BackendName;
         var funcs = MsrChannel.ListFunctions();
-        bool hasWriteMsr = funcs.Any(f => f.Contains("WriteMsr", StringComparison.OrdinalIgnoreCase));
+        bool hasWriteMsr = funcs.Contains("ioctl_write_msr", StringComparer.Ordinal);
 
         Version? v = asm.GetName().Version;
-        if (v is null || v.Major != 0 || v.Minor != 9 || v.Build != 4)
+        if (v is null || v.Major != 0 || v.Minor != 9 || v.Build < 6)
         {
             snap.InstallHints.Add(
-                $"LibreHardwareMonitorLib 版本为 {snap.LhmVersion}，本项目固定要求 0.9.4。" +
-                "请安装 / 回退 NuGet 包 LibreHardwareMonitorLib 0.9.4，并确认随包带 WinRing0 内核驱动。");
+                $"LibreHardwareMonitorLib 版本为 {snap.LhmVersion}，本项目要求 0.9.6 及以上。" +
+                "0.9.4 的传感器侧依赖 WinRing0，而该驱动会被安全软件按易受攻击驱动名单删除；" +
+                "请升级 NuGet 包 LibreHardwareMonitorLib 到 0.9.6（PawnIO 后端）。");
         }
-        if (snap.Backend.Contains("Pawn", StringComparison.OrdinalIgnoreCase) || !hasWriteMsr)
+        if (!hasWriteMsr)
         {
             snap.InstallHints.Add(
-                "当前 LHM 后端只提供 MSR 读能力（PawnIO / IntelMSR 模块只有 ioctl_read_msr）：" +
-                "可作为「只读降级」查看参数，但无法替代 WinRing0 完成写入。" +
-                "若 WinRing0 在本机被 HVCI / 安全软件拦截，请关闭内存完整性或加入白名单后重试；" +
-                "PawnIO 能否绕过同类拦截尚未实测，不作兼容性承诺。真实写入仍需 LHM 0.9.4 / WinRing0。");
+                "当前 IntelMSR 模块不含 ioctl_write_msr（只读版本）：参数只能查看不能下发。" +
+                "请使用完整安装包（内置 PawnIO.Modules 0.2.11 模块），" +
+                "或在 %LOCALAPPDATA%\\ThermalTuner\\driver\\ 下放置可写版本的 IntelMSR.bin。" +
+                "注意：LibreHardwareMonitor 自带的同模块是只读的，不能替代。");
         }
 
         // ---- 2. MSR 通道与逐寄存器可读性 ----
@@ -149,18 +150,22 @@ public static class EnvironmentSelfCheck
                 snap.InstallHints.Add("缺少管理员权限：真实功耗读取与 MSR 读写都需要管理员，请点界面上的「以管理员重启」。");
                 break;
             case MsrStatus.NotInstalled:
+                snap.InstallHints.Add(
+                    "PawnIO 驱动未安装：请以管理员运行本程序，在诊断页点「安装 MSR 驱动」。" +
+                    "安装会在系统内注册 PawnIO 内核驱动（微软 WHQL 签名）并创建设备节点。");
+                break;
             case MsrStatus.DriverUnavailable:
                 snap.InstallHints.Add(
-                    "WinRing0 内核驱动未加载：请以管理员运行；若仍失败，检查 Windows「内存完整性(HVCI)」、" +
-                    "Defender / 第三方安全软件是否拦截未签名驱动，并把本程序加入白名单。");
+                    "PawnIO 驱动已装但设备打不开：请重启电脑后重试；若仍失败，检查安全软件是否拦截了 PawnIO.sys。");
                 break;
             case MsrStatus.ModuleUnavailable:
                 snap.InstallHints.Add(
-                    "LHM 程序集不提供 Ring0 MSR 接口：请安装 LibreHardwareMonitorLib 0.9.4（含 WinRing0）以启用写入；" +
-                    "0.9.6+ / PawnIO 只能读，不能写。");
+                    "IntelMSR 模块不可用：内置模块缺失或为只读版本（只含 ioctl_read_msr）。" +
+                    "请使用完整安装包，或把 PawnIO.Modules 0.2.11+ 的 IntelMSR.bin 放到 " +
+                    "%LOCALAPPDATA%\\ThermalTuner\\driver\\ 后重启程序。");
                 break;
             case MsrStatus.ReadOnly:
-                snap.InstallHints.Add("MSR 通道只读：可能被固件锁定，或当前 LHM 后端不含写接口；参数项只能查看不能微调。");
+                snap.InstallHints.Add("MSR 通道只读：可能被固件锁定；参数项只能查看不能微调。");
                 break;
         }
         if (snap.Hvci)
@@ -268,13 +273,13 @@ public static class EnvironmentSelfCheck
         sb.AppendLine($"CPU            : {s.CpuName}");
         sb.AppendLine($"管理员         : {(s.Elevated ? "是" : "否（真实读写需提权）")}");
         sb.AppendLine($"虚拟化 / HVCI  : {(s.Virtualized ? "是" : "否")} / {(s.Hvci ? "已开启" : "未开启")}");
-        sb.AppendLine($"LHM 版本       : {s.LhmVersion}（要求 0.9.4）");
+        sb.AppendLine($"LHM 版本       : {s.LhmVersion}（要求 0.9.6+，PawnIO 后端）");
         sb.AppendLine($"MSR 后端       : {s.Backend}");
         sb.AppendLine($"通道状态       : {s.MsrStatus}");
         sb.AppendLine($"通道详情       : {s.MsrDetail}");
         sb.AppendLine($"写能力实测     : {(s.WriteProbeDone ? "已完成" : "未做（需管理员跑 --env-check）")}");
         if (s.MsrStatus.Contains("NoAdmin", StringComparison.OrdinalIgnoreCase) && s.CanRead("PL1"))
-            sb.AppendLine("说明           : 当前进程非管理员，但 Ring0 句柄仍可读取寄存器；这是「能看不能写」状态，" +
+            sb.AppendLine("说明           : 当前进程非管理员，只读探测可能仍可用；这是「能看不能写」状态，" +
                           "真实写入需点界面「以管理员重启」，否则请求会走演练或被驱动拒绝。");
         sb.AppendLine();
         sb.AppendLine("== 2. 参数项可获取性 / 可写性 ==");

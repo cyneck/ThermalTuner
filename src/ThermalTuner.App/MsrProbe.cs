@@ -12,7 +12,7 @@ using ThermalTuner.Core.Taxonomy;
 namespace ThermalTuner.App;
 
 /// <summary>
-/// MSR 通道自检（只读）：报告 LHM 版本、Ring0 驱动后端、0x610 解码结果。不做任何写入。
+/// MSR 通道自检（只读）：报告 LHM 版本、PawnIO 后端与模块函数、0x610 解码结果。不做任何写入。
 /// 用法：ThermalTuner.App.exe --msr-probe --out msr-probe.txt
 /// </summary>
 internal static class MsrProbe
@@ -28,7 +28,7 @@ internal static class MsrProbe
         sb.AppendLine($"程序目录     : {AppContext.BaseDirectory}（单文件发布时 LHM DLL 内嵌于 exe）");
 
         sb.AppendLine();
-        sb.AppendLine("== Ring0 接口 ==");
+        sb.AppendLine("== PawnIO 模块函数 ==");
         var funcs = MsrChannel.ListFunctions();
         sb.AppendLine($"MSR 相关方法 : {funcs.Length} 个");
         foreach (var f in funcs) sb.AppendLine("  " + f);
@@ -49,7 +49,7 @@ internal static class MsrProbe
         }
         else
         {
-            sb.AppendLine("0x610 读取   : 失败（需要管理员权限，或 WinRing0 驱动被拦截）");
+            sb.AppendLine("0x610 读取   : 失败（需要管理员权限，或 PawnIO 驱动 / 模块不可用）");
         }
 
         // 核心高级参数的寄存器可读性盘点（全部只读，不做任何写入）。
@@ -134,7 +134,7 @@ internal static class MsrProbe
 
         if (channel.Status != MsrStatus.Writable)
         {
-            sb.AppendLine("跳过：通道不可写（需管理员 + WinRing0 驱动已加载 + 0x610 未锁定）");
+            sb.AppendLine("跳过：通道不可写（需管理员 + PawnIO 驱动已装 + 0x610 未锁定）");
             Flush(outPath, sb);
             return 3;
         }
@@ -169,7 +169,7 @@ internal static class MsrProbe
 
     /// <summary>
     /// 接口能力探测（替代旧的 Pawn 模块函数探测）：
-    /// 列出 Ring0 暴露的 MSR 方法，并做一次只读连通性验证，不做任何写入。
+    /// 列出 IntelMSR 模块暴露的函数，并做一次只读连通性验证，不做任何写入。
     /// </summary>
     public static int RunFunctionProbe(string outPath)
     {
@@ -177,10 +177,10 @@ internal static class MsrProbe
         sb.AppendLine($"后端: {MsrChannel.BackendName}");
         sb.AppendLine($"LHM: {typeof(Computer).Assembly.FullName}");
         sb.AppendLine();
-        sb.AppendLine("== Ring0 MSR 接口 ==");
+        sb.AppendLine("== IntelMSR 模块函数 ==");
         var funcs = MsrChannel.ListFunctions();
         if (funcs.Length == 0)
-            sb.AppendLine("  （未找到：通常是引用了 0.9.6+ PawnIO 分支，需回退到 0.9.4）");
+            sb.AppendLine("  （未找到：IntelMSR 模块未加载，请检查驱动与模块资源）");
         foreach (var f in funcs) sb.AppendLine("  " + f);
 
         using var channel = MsrChannel.Open();
@@ -211,7 +211,7 @@ internal static class MsrProbe
 
         if (channel.Status != MsrStatus.Writable)
         {
-            sb.AppendLine("跳过：通道不可写（需管理员 + WinRing0 驱动 + 0x610 未锁）");
+            sb.AppendLine("跳过：通道不可写（需管理员 + PawnIO 驱动 + 0x610 未锁）");
             Flush(outPath, sb);
             return 3;
         }
@@ -307,7 +307,7 @@ internal static class MsrProbe
         sb.AppendLine($"通道状态   : {channel.Status} / {channel.Detail}");
         if (channel.Status != MsrStatus.Writable)
         {
-            sb.AppendLine("RESULT: SKIP（需管理员 + WinRing0 驱动）");
+            sb.AppendLine("RESULT: SKIP（需管理员 + PawnIO 驱动）");
             Flush(outPath, sb);
             return 3;
         }
@@ -402,7 +402,7 @@ internal static class MsrProbe
         sb.AppendLine($"启动响应   : 0x{startup:X16}（OC Mailbox 响应，不是实时电压）");
         if (channel.Status != MsrStatus.Writable)
         {
-            sb.AppendLine("RESULT: SKIP（需管理员 + WinRing0 驱动）");
+            sb.AppendLine("RESULT: SKIP（需管理员 + PawnIO 驱动）");
             Flush(outPath, sb);
             return 3;
         }

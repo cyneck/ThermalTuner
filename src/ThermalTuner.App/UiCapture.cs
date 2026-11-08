@@ -13,14 +13,15 @@ namespace ThermalTuner.App;
 /// <summary>
 /// 离屏 UI 截图：构造真实主窗口 → 采几拍遥测 → 切到指定页 → 渲染成 PNG。
 /// 用途：向用户展示实际界面、留存 UI 证据、回归比对；不需要人工点窗口。
-/// 用法：ThermalTuner.App.exe --capture-ui --page monitor --out ui.png
+/// 用法：ThermalTuner.App.exe --capture-ui --page overview --out ui.png [--height 1600]
+/// 概览页内容较长，默认 840 只截首屏；传 --height 可一次性渲染整页用于走查。
 ///
 /// 安全边界：MainWindow.CaptureMode 下不建托盘、不弹首次向导、不恢复 MSR、
 /// 不写 settings.json；本命令只做只读采样与渲染，不写任何寄存器。
 /// </summary>
 internal static class UiCapture
 {
-    public static int Run(string outPath, string pageKey)
+    public static int Run(string outPath, string pageKey, int height = 840)
     {
         SessionState? session = null;
         MainWindow? window = null;
@@ -43,7 +44,7 @@ internal static class UiCapture
                 CaptureMode = true,
                 ShowActivated = false,
                 Width = 1320,
-                Height = 840
+                Height = Math.Clamp(height, 600, 4000)
             };
             window.NavigateTo(pageKey);
             window.Show();

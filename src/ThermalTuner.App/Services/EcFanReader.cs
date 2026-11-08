@@ -5,18 +5,28 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
+using ThermalTuner.Core.Taxonomy;
 
 namespace ThermalTuner.App.Services;
 
 /// <summary>
-/// NBFC / ec-probe 只读访问层。
+/// 风扇 EC 只读采集层。
+///
+/// 优先级（当前实现）：
+///   ① 内置 EC 只读（EcPortReader，不依赖任何第三方软件）→
+///   ② NBFC / ec-probe（若仍安装，用于交叉验证或普通权限回退）→
+///   ③ N/A。
 ///
 /// 设计边界（重要）：
-/// · 本类只调用 nbfc.exe status 与 ec-probe.exe 的 read / dump / monitor，
-///   **绝不调用 ec-probe.exe write**，绝不写 EC 寄存器。
-/// · 后期的「风扇微调」属于控制层，应单独实现并显式授权；这里只负责采集与自动判断，
-///   同时把生效配置里的 Read/Write/Min/Max 寄存器信息暴露出来供控制层复用。
-/// · ec-probe 需要管理员才能加载 EC 插件；普通权限下只返回提示，不阻断主链路。
+/// · 只读：绝不写 EC 寄存器内容，绝不写风扇控制寄存器（WriteRegister=148）。
+///   内置端口读只包含向 0x66/0x62 写「读命令 + 地址」的必要握手，不写数据。
+/// · NBFC 路径只调用 nbfc.exe status 与 ec-probe.exe 的 read / dump / monitor，
+///   **绝不调用 ec-probe.exe write**。
+/// · 后期的「风扇微调」属于控制层，应单独实现并显式授权；这里只负责采集与自动判断。
+/// · 内置 EC 读与 ec-probe 一样需要管理员（WinRing0 驱动已加载）；普通权限下优雅回退。
+/// · 读到的值是 EC 档位刻度（0~255 原始值归一化），**不是物理转速 RPM**。
+/// · 采集层同时做原始值恒定检测（FanStagnationDetector）：连续 10 次真实采样不变
+///   即随读数上报「疑似非实时」，界面必须显示原始字节并加标注，不得当成实时转速。
 /// </summary>
 internal static class EcFanReader
 {
@@ -142,16 +152,39 @@ internal static class EcFanReader
     }
 
     /// <summary>
-    /// NBFC 的百分比换算：EC 原始值在 [MinSpeedValue, MaxSpeedValue] 之间线性映射到 0~100%。
-    /// 配置里 Min=255 / Max=58 是反向编码（值越小风扇越快），公式对反向同样成立。
+    /// EC 原始值在 [MinSpeedValue, MaxSpeedValue] 之间线性映射到 0~100%。
+    /// 常见机型是反向编码（如 Min=255 停转、Max=58 满速），公式对反向同样成立。
     /// </summary>
-    // 换算与解析放在 Core，便于单元测试守护（防止把错误的百分比显示给用户）。
     public static double PercentFromRaw(double raw, double min, double max) =>
         ThermalTuner.Core.Taxonomy.FanPercentCodec.FromRaw(raw, min, max);
 
     /// <summary>从 ec-probe 输出里取第一个十进制或 0x 十六进制数。</summary>
     public static double FirstNumber(string text) =>
         ThermalTuner.Core.Taxonomy.FanPercentCodec.ParseFirstNumber(text);
+
+    // ---------------- 内置 EC 只读映射 ----------------
+
+    private static (int Reg, double Min, double Max, string Source)? _mapping;
+
+    /// <summary>
+    /// 内置 EC 读的寄存器与刻度映射。默认值来自本机 HP OMEN Notebook PC 15 的
+    /// NBFC 生效配置（读寄存器 149 / Min=255 / Max=58），仅作为档位刻度换算，
+    /// 不是瓦数常量；换机型可用 settings.json 的三个 FanEc* 字段覆盖，
+    /// 或用 --ec-probe 报告核对。进程内只读取一次配置。
+    /// </summary>
+    public static (int Reg, double Min, double Max, string Source) Mapping()
+    {
+        if (_mapping is not null) return _mapping.Value;
+        var s = SettingsStore.Load();
+        bool custom = s.FanEcRegister > 0 || s.FanEcMinRaw > 0 || s.FanEcMaxRaw > 0;
+        var v = (
+            Reg: Math.Clamp(s.FanEcRegister > 0 ? s.FanEcRegister : 149, 0, 255),
+            Min: s.FanEcMinRaw > 0 ? s.FanEcMinRaw : 255.0,
+            Max: s.FanEcMaxRaw > 0 ? s.FanEcMaxRaw : 58.0,
+            Source: custom ? "settings.json 自定义" : "本机校准默认 · HP OMEN Notebook PC 15");
+        _mapping = v;
+        return v;
+    }
 
     // ---------------- 运行时只读采集（低频缓存） ----------------
 
@@ -162,9 +195,21 @@ internal static class EcFanReader
     private static bool _ecUsable = true;
 
     /// <summary>
-    /// 风扇运行百分比（只读）。优先 EC 直读（管理员，最贴近真实），
-    /// 回退 NBFC 服务已换算的 status（普通权限可用），再回退 N/A。
-    /// 每 2.2s 最多刷新一次（与 NBFC 的 EcPollInterval 对齐），避免每拍启动外部进程。
+    /// 原始值恒定检测。只在缓存失效、真正读了一次 EC 时推进（约 2.2s 一拍），
+    /// 缓存命中直接返回上次结果，不会把界面刷新次数当成新的采样。
+    /// </summary>
+    private static readonly FanStagnationDetector Stagnation = new();
+
+    private static (int Count, bool Flag) Track(double raw)
+    {
+        Stagnation.Observe(raw);
+        return (Stagnation.Consecutive, Stagnation.IsStagnant);
+    }
+
+    /// <summary>
+    /// 风扇档位（只读，非 RPM）。优先内置 EC 直读（不依赖 NBFC），
+    /// 再回退 NBFC ec-probe / status，全不可用时显示 N/A。
+    /// 每 2.2s 最多刷新一次，降低与 BIOS 争用 EC 端口的概率。
     /// </summary>
     public static FanReading ReadRuntime()
     {
@@ -173,45 +218,75 @@ internal static class EcFanReader
             if (DateTime.UtcNow - _cachedAt < Ttl) return _cached;
             _cachedAt = DateTime.UtcNow;
 
-            string? dir = FindDir();
-            if (dir is null)
+            // ① 内置 EC 只读：NBFC 卸载后仍可用；只做读握手，不写 EC 寄存器内容
+            var cfg = Mapping();
+            var ec = EcPortReader.ReadByte((byte)cfg.Reg);
+            if (ec.Ok)
             {
-                _cached = new FanReading(double.NaN, "", double.NaN, "未安装 NBFC");
-                return _cached;
-            }
-
-            string status = Status(dir);
-            var def = Definition(dir, status);
-            if (def is { } d && d.ReadReg >= 0 && _ecUsable)
-            {
-                var r = ReadRegister(dir, d.ReadReg);
-                bool ok = r.Exit == 0 &&
-                          !r.Out.Contains("Could not load EC plugin", StringComparison.OrdinalIgnoreCase);
-                double raw = ok ? FirstNumber(r.Out) : double.NaN;
-                double pct = PercentFromRaw(raw, d.MinValue, d.MaxValue);
+                double pct = PercentFromRaw(ec.Value, cfg.Min, cfg.Max);
                 if (!double.IsNaN(pct))
                 {
-                    _cached = new FanReading(pct, "EC 直读 · 只读", raw,
-                        $"寄存器 {d.ReadReg} = {raw:F0}，按 {d.MinValue:F0}/{d.MaxValue:F0} 换算");
+                    var t = Track(ec.Value);
+                    _cached = new FanReading(pct, "内置 EC 只读 · 档位刻度", ec.Value,
+                        $"EC 寄存器 {cfg.Reg} = {ec.Value}，按 {cfg.Min:F0}/{cfg.Max:F0} 换算（{cfg.Source}）；非转速",
+                        t.Count, t.Flag);
                     return _cached;
                 }
-                _ecUsable = false;   // 普通权限下不再反复尝试；提权重启后进程内静态字段会重置
             }
 
-            string reported = Value(status, "Current fan speed") ?? "";
-            if (double.TryParse(reported, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
-                && v >= 0 && v <= 100)
+            // ② 可选 NBFC 交叉验证 / 普通权限回退
+            string? dir = FindDir();
+            if (dir is not null)
             {
-                _cached = new FanReading(v, "NBFC 服务 · 只读", double.NaN,
-                    "服务按生效配置读 EC 并换算（与 ec-probe 直读一致）");
-                return _cached;
+                string status = Status(dir);
+                var def = Definition(dir, status);
+                if (def is { } d && d.ReadReg >= 0 && _ecUsable)
+                {
+                    var r = ReadRegister(dir, d.ReadReg);
+                    bool ok = r.Exit == 0 &&
+                              !r.Out.Contains("Could not load EC plugin", StringComparison.OrdinalIgnoreCase);
+                    double raw = ok ? FirstNumber(r.Out) : double.NaN;
+                    double nbPct = PercentFromRaw(raw, d.MinValue, d.MaxValue);
+                    if (!double.IsNaN(nbPct))
+                    {
+                        var t = Track(raw);
+                        _cached = new FanReading(nbPct, "NBFC ec-probe · 只读", raw,
+                            $"寄存器 {d.ReadReg} = {raw:F0}，按 {d.MinValue:F0}/{d.MaxValue:F0} 换算",
+                            t.Count, t.Flag);
+                        return _cached;
+                    }
+                    _ecUsable = false;   // 普通权限下不再反复尝试
+                }
+
+                string reported = Value(status, "Current fan speed") ?? "";
+                if (double.TryParse(reported, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                    && v >= 0 && v <= 100)
+                {
+                    // 服务只给换算后的百分比、没有原始字节，无法做恒定判定 → 重置检测。
+                    Track(double.NaN);
+                    _cached = new FanReading(v, "NBFC 服务 · 只读", double.NaN,
+                        "服务按生效配置读 EC 并换算（与内置 EC 直读互为交叉验证）", 0, false);
+                    return _cached;
+                }
             }
 
-            _cached = new FanReading(double.NaN, "", double.NaN, "NBFC 状态不可解析");
+            Track(double.NaN);   // 数据源中断，恢复后从 0 重新计数
+            _cached = new FanReading(double.NaN, "", double.NaN,
+                "EC 只读不可用：" + (ec.Ok ? "刻度换算失败" : ec.Reason) +
+                "；NBFC " + (dir is null ? "未安装（已不依赖）" : "状态不可解析"), 0, false);
             return _cached;
         }
     }
 }
 
-/// <summary>一次只读风扇读数：百分比、来源、EC 原始值、说明。</summary>
-public sealed record FanReading(double Percent, string Source, double RawValue, string Detail);
+/// <summary>
+/// 一次只读风扇读数：档位百分比（非 RPM）、来源、EC 原始值、说明，
+/// 以及「原始值连续不变次数」与「疑似非实时」判定（只在真实采样时推进）。
+/// </summary>
+public sealed record FanReading(
+    double Percent,
+    string Source,
+    double RawValue,
+    string Detail,
+    int StagnantReads = 0,
+    bool Stagnant = false);

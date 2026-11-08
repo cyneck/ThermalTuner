@@ -92,7 +92,7 @@ internal static class CalibrationSweepProbe
 
             if (!session.MsrWritable)
             {
-                sb.AppendLine("!! 通道不可写，无法执行阶梯标定。请以管理员运行并确认 WinRing0 驱动已加载。");
+                sb.AppendLine("!! 通道不可写，无法执行阶梯标定。请以管理员运行并确认 PawnIO 驱动已装、IntelMSR 模块可写。");
                 sb.AppendLine("RESULT: 中止");
                 return 2;
             }

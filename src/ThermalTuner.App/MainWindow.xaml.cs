@@ -19,12 +19,11 @@ public partial class MainWindow : Window
     public bool CaptureMode { get; set; }
     private readonly Dictionary<string, (string Title, string Subtitle)> _meta = new()
     {
-        ["overview"] = ("概览", "一屏看清温度、功耗与最新决策"),
-        ["tuning"] = ("智能调优", "用档位与天花板表达意图，其余交给决策树"),
-        ["monitor"] = ("实时监控", "连续采样与明细，可压测、可导出"),
-        ["params"] = ("高级参数", "默认只读；显式解锁后可编辑并应用"),
-        ["diagnostics"] = ("诊断与日志", "环境体检、传感器清单与恢复机制"),
-        ["settings"] = ("设置", "自启、采样、恢复策略与许可")
+        ["overview"] = ("概览", "全部监控指标、统一时序图、决策凭证与采样明细"),
+        ["tuning"] = ("智能微调", "选中档位即下发；阶梯调度器按温度低频动态微调"),
+        ["params"] = ("手工微调", "解锁编辑全部参数，保存并下发后进入手工模式"),
+        ["diagnostics"] = ("诊断与日志", "环境体检、固件基线对照、自检报告与恢复机制"),
+        ["settings"] = ("设置", "调优模式、升档冷却、自启、采样与写入授权")
     };
 
     public MainWindow() : this(new SessionState())
@@ -91,9 +90,38 @@ public partial class MainWindow : Window
             };
             _tray.ProfileRequested += profile =>
             {
-                _session.SetProfile(profile);
+                // v0.5.0：托盘切档与页面点选走同一条「选中即下发」链路，含二次确认。
+                if (_session.Profile == profile) return;
+                var plan = _session.PrepareProfileApply(profile);
+                if (plan.HardBlocked)
+                {
+                    _session.ClearPendingPlan();
+                    _session.AddAlert("danger", "托盘切档被拒绝",
+                        plan.ConfirmReason + "；高温只降不升不可由二次确认解除。");
+                    return;
+                }
+
+                bool proceed = !plan.NeedConfirmation || ConfirmDialog.Ask(
+                    null, "确认切换档位并下发",
+                    $"托盘切换到「{plan.ProfileLabel}」（天花板 {plan.CeilingC:F0}°C）。" +
+                    (double.IsNaN(plan.TargetPl1W)
+                        ? "目标 PL1 将在首拍采样后重算。"
+                        : $"目标 PL1 {plan.TargetPl1W:F1}W，Δ {plan.DeltaW:+0;-0;0}W。"),
+                    new[] { plan.ConfirmReason, "只写 0x610 的 PL1/PL2；回读校验，失败回滚并留审计" },
+                    "确认并下发");
+
+                if (!proceed)
+                {
+                    _session.ClearPendingPlan();
+                    return;
+                }
+
+                var outcome = _session.ApplyProfile(profile, force: plan.NeedConfirmation);
                 _tray?.UpdateProfile(profile);
-                _session.AddAlert("info", "已切换档位", $"托盘切换到「{_session.ProfileLabel}」。");
+                _session.AddAlert(outcome.Ok ? "info" : "warn", "托盘切换档位",
+                    outcome.Ok
+                        ? $"已下发 {outcome.StepPl1W}W 到 0x610 并回读校验（{plan.ProfileLabel}）。"
+                        : $"档位意图已更新为「{plan.ProfileLabel}」；硬件下发：{outcome.Message}");
             };
             _tray.ExitRequested += ExitApplication;
 
@@ -139,7 +167,7 @@ public partial class MainWindow : Window
             var r = _session.RestoreOriginal();
             if (!r.Ok)
                 _session.AddAlert("warn", "退出前恢复原值失败",
-                    r.Message + "；请重启后在「高级参数」页点「恢复原值」，或重启机器回到固件默认值。");
+                    r.Message + "；请重启后在「手工微调」页点「恢复原值」，或重启机器回到固件默认值。");
         }
 
         _tray?.Dispose();
@@ -162,7 +190,6 @@ public partial class MainWindow : Window
         {
             "overview" => NavOverview,
             "tuning" => NavTuning,
-            "monitor" => NavMonitor,
             "params" => NavParams,
             "diagnostics" => NavDiagnostics,
             "settings" => NavSettings,
@@ -178,7 +205,6 @@ public partial class MainWindow : Window
             page = key switch
             {
                 "tuning" => new TuningPage(),
-                "monitor" => new MonitorPage(),
                 "params" => new ParamsPage(),
                 "diagnostics" => new DiagnosticsPage(),
                 "settings" => new SettingsPage(),

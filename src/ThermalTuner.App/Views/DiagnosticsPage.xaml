@@ -127,11 +127,39 @@
 
       <Border Style="{StaticResource Card}" Margin="0,12,0,0">
         <StackPanel>
-          <TextBlock Text="环境自检报告" Style="{StaticResource H2}" />
+          <Grid>
+            <TextBlock Text="环境自检报告" Style="{StaticResource H2}" VerticalAlignment="Center" />
+            <Button Content="管理员重新自检" Style="{StaticResource GhostButton}"
+                    HorizontalAlignment="Right" Height="26" Padding="10,0"
+                    Click="EnvCheck_Click"
+                    ToolTip="管理员下补测写入能力（同值写回 / −10mV 后回零）；从「手工微调」页迁来" />
+          </Grid>
+          <TextBlock x:Name="EnvCheckOutcome" Style="{StaticResource Label}" FontSize="11"
+                     Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
           <TextBox Text="{Binding CapabilityReportText, Mode=OneWay}" IsReadOnly="True"
                    Height="150" Margin="0,8,0,0" TextWrapping="Wrap"
                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                    FontFamily="Consolas" FontSize="11" />
+        </StackPanel>
+      </Border>
+
+      <!-- v0.5.0：固件基线对照从「高级参数」迁入诊断页（只读展示，不参与编辑） -->
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <StackPanel>
+          <TextBlock Text="固件基线与三层参数对照" Style="{StaticResource H2}" />
+          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Text="L1 固件基线在首次启动时快照、永不覆盖；L2 智能标定只更新通用安全参数；L3 手工微调由用户编辑并开机重放。固件默认值不可持久化修改。" />
+          <TextBlock Text="{Binding FwDefaultText, Mode=OneWay}" Style="{StaticResource Mono}"
+                     FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding FwDivergeText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding CalibrationLayerText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ManualLayerText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding AutoApplyGateText, Mode=OneWay}" Style="{StaticResource Label}"
+                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextTertiary}" />
         </StackPanel>
       </Border>
     </StackPanel>

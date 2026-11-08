@@ -49,6 +49,12 @@ public sealed class TelemetrySource : IDisposable
         {
             _driverOk = false;
         }
+
+        // 同 App 的 HardwareTelemetry：丢弃构造期的 CPU 开销，避免首拍负载虚高。
+        if (GetSystemTimes(out long idle2, out long kernel2, out long user2))
+        {
+            _prevIdle = idle2; _prevKernel = kernel2; _prevUser = user2;
+        }
     }
 
     public bool DriverAvailable => _driverOk;
@@ -79,6 +85,11 @@ public sealed class TelemetrySource : IDisposable
         double temp, load, power, clock;
         string source;
 
+        // 与主程序同一口径：CPU 负载取系统级 GetSystemTimes 差分（任务管理器的
+        // 系统时间占比同源），每拍都推进差分基准。LHM CPU Total 是线程级估算、
+        // 随 Update 窗口跳动，只在系统计时不可用时兜底。
+        double systemLoad = ReadLoadFromSystemTimes();
+
         if (_driverOk && _cpu != null)
         {
             try
@@ -88,15 +99,13 @@ public sealed class TelemetrySource : IDisposable
 
                 temp = PickTemperature();
                 power = PickSensor(SensorType.Power, "Package");
-                load = PickSensor(SensorType.Load, "CPU Total");
-                if (double.IsNaN(load)) load = double.NaN; // 回退到系统负载
+                load = double.IsNaN(systemLoad)
+                    ? Pct(PickSensor(SensorType.Load, "CPU Total")) : systemLoad;
+                if (double.IsNaN(load)) load = 0;
                 clock = PickMaxClock();
 
                 if (!double.IsNaN(temp))
-                {
-                    load = double.IsNaN(load) ? ReadLoadFromSystemTimes() : load;
                     return new TelemetrySample(temp, load, power, clock, "LHM");
-                }
             }
             catch
             {
@@ -104,9 +113,9 @@ public sealed class TelemetrySource : IDisposable
             }
         }
 
-        // 回退：ACPI 温度 + 系统负载
+        // 回退：ACPI 温度 + 同一份系统级负载
         temp = ReadWmiTemperature();
-        load = ReadLoadFromSystemTimes();
+        load = double.IsNaN(systemLoad) ? 0 : systemLoad;
         power = EstimatePower(load);
         source = double.IsNaN(temp) ? "SystemTimesOnly" : "WMI";
         return new TelemetrySample(temp, load, power, 0, source);
@@ -215,6 +224,9 @@ public sealed class TelemetrySource : IDisposable
             return double.NaN;
         }
     }
+
+    /// <summary>百分比归一化到 0~100；NaN（读不到）原样保留。与 App 的 HardwareTelemetry.Pct 同口径。</summary>
+    private static double Pct(double v) => double.IsNaN(v) ? v : Math.Clamp(v, 0.0, 100.0);
 
     private double ReadLoadFromSystemTimes()
     {

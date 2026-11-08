@@ -102,15 +102,6 @@ public partial class ParamsPage : UserControl
             OutcomeBanner.Visibility = Visibility.Collapsed;
     }
 
-    private void EnvCheck_Click(object sender, RoutedEventArgs e)
-    {
-        if (Session is not { } s) return;
-        string result = s.RunFullEnvironmentCheck();
-        ShowOutcome("环境自检：" + result);
-        RefreshMsrUi();
-        SyncFromSession();
-    }
-
     private void Revert_Click(object sender, RoutedEventArgs e)
     {
         SyncFromSession();
@@ -291,7 +282,7 @@ public partial class ParamsPage : UserControl
         MsrChip.BorderBrush = real ? (Brush)FindResource("Accent") : (Brush)FindResource("Warn");
         MsrChipText.Foreground = real ? (Brush)FindResource("AccentDeep") : (Brush)FindResource("Warn");
 
-        ApplyButton.Content = real ? "应用（真实写入）" : "应用（演练）";
+        ApplyButton.Content = real ? "保存并下发" : "保存并下发（演练）";
         MsrHint.Text = real
             ? "真实写入 · 备份 / 回读 / 失败回滚"
             : "演练模式 · 只校验不写硬件";
@@ -314,15 +305,20 @@ public partial class ParamsPage : UserControl
         items.Add(real
             ? "写入前自动备份 0x610 原值；回读不一致会立即回滚"
             : "演练模式：不写硬件，仅验证校验与确认流程");
+        if (real)
+        {
+            items.Add("下发成功后切换到「手工微调」模式：智能档位与决策树只演算，不再覆盖本页保存的值");
+            items.Add("经阶梯调度器单入口下发：保留你输入的精确瓦数与 Tau 改写；高温只降不升、写入熔断仍生效");
+        }
 
         bool ok = ConfirmDialog.Ask(
             Window.GetWindow(this),
-            real ? "确认写入 CPU 寄存器" : "确认应用参数",
+            real ? "确认保存并下发（进入手工微调）" : "确认应用参数",
             real
-                ? "这是真实写入：会立即改变 CPU 功耗 / 选频参数，影响性能、温度与功耗。通用参数可由智能标定推荐；电压偏移属个性化高风险项，会另行二次确认。请确认你知道如何恢复原值。"
+                ? "这是真实写入：会立即改变 CPU 功耗 / 选频参数，影响性能、温度与功耗，并切换到手工微调模式。通用参数可由智能标定推荐；电压偏移属个性化高风险项，会另行二次确认。请确认你知道如何恢复原值。"
                 : "以下改动将通过完整确认流程（演练，不写硬件）。",
             items,
-            real ? "写入硬件" : "确认应用");
+            real ? "保存并下发" : "确认应用");
 
         if (!ok) return;
 
@@ -340,7 +336,10 @@ public partial class ParamsPage : UserControl
             return;
         }
 
-        var result = s.ApplyLimits(pl1, pl2, tau, writeTimeWindow: tauChanged);
+        // v0.5.0：走阶梯调度器单入口（保留精确瓦数与 Tau 改写）。
+        // 本页的确认框已完成二次确认，因此 force=true；高温只降不升与熔断仍不可绕过。
+        var result = s.ApplyManualWrite(pl1, pl2, tau,
+            writeTimeWindow: tauChanged, force: true);
         // -1 = 该项不可读或未编辑：不写入、不持久化，绝不把决策默认值存成用户优化值
         int epp = (s.EppEditable && int.TryParse(EppBox.Text, out int parsedEpp)) ? parsedEpp : -1;
         int minPerf = s.HwpEditable && int.TryParse(MinPerfBox.Text, out int mp) ? mp : -1;
@@ -405,8 +404,8 @@ public partial class ParamsPage : UserControl
         ShowOutcome(result.Ok
             ? $"写入成功：{result.Message}" + (tauChanged ? "" : "（时间窗口保持原值）") +
               hwpNote + turboNote + voltageNote +
-              "；L3 用户编辑值已保存，开机自动重放；重新标定不会覆盖它。"
-            : $"写入失败：{result.Message}（参数未保存）");
+              "；L3 用户编辑值已保存，开机自动重放；已切换到「手工微调」模式，智能档位只演算；重新标定不会覆盖它。"
+            : $"写入失败：{result.Message}（参数未保存，模式未切换）");
 
         RefreshMsrUi();
         SyncFromSession();

@@ -1,12 +1,12 @@
 ; ThermalTuner 安装包脚本（Inno Setup 6）
-; 生成：iscc /DMyAppVersion=0.4.3 /DSourceDir=..\..\artifacts\app-win-x64 ThermalTuner.App.iss
+; 生成：iscc /DMyAppVersion=0.5.1 /DSourceDir=..\..\artifacts\app-win-x64 ThermalTuner.App.iss
 ; 特性：安装向导、桌面/开始菜单快捷方式、卸载入口、可选开机自启、可选保留用户配置
 
 #define MyAppName "ThermalTuner"
 #define MyAppPublisher "ThermalTuner"
 #define MyAppExeName "ThermalTuner.App.exe"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.4.3"
+  #define MyAppVersion "0.5.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\artifacts\app-win-x64"

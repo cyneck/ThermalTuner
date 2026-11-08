@@ -15,6 +15,9 @@ public partial class SettingsPage : UserControl
     {
         InitializeComponent();
         Loaded += (_, _) => LoadFromSettings();
+        // 离屏渲染 / 冒烟自检不会触发 Loaded，但设置页大量文本是代码填充的，
+        // 因此 DataContext 落地时也刷一次，保证 --capture-ui 截图内容完整。
+        DataContextChanged += (_, _) => LoadFromSettings();
     }
 
     private SessionState? Session => DataContext as SessionState;
@@ -41,9 +44,53 @@ public partial class SettingsPage : UserControl
                 break;
             }
         }
+        foreach (ComboBoxItem item in CooldownBox.Items)
+        {
+            if (item.Tag is string tag && int.TryParse(tag, out int sec) &&
+                Math.Abs(sec - s.Settings.RampUpCooldownSeconds) < 0.1)
+            {
+                CooldownBox.SelectedItem = item;
+                break;
+            }
+        }
+        if (CooldownBox.SelectedItem is null) CooldownBox.SelectedIndex = 3;  // 20s 默认
+        RefreshMode();
         _loading = false;
 
         DataDirText.Text = SettingsStore.DataDirectory;
+    }
+
+    private void Cooldown_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || Session is not { } s) return;
+        if (CooldownBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int sec))
+            s.SetRampUpCooldown(sec);
+    }
+
+    private void RefreshMode()
+    {
+        if (Session is not { } s) return;
+        ModeLine.Text = $"当前模式：{s.TuningModeText} · {s.CooldownText} · {s.AutoApplyGateText}";
+        SwitchModeButton.Visibility = s.IsManualModePublic ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SwitchMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (Session is not { } s || !s.IsManualModePublic) return;
+        bool ok = ConfirmDialog.Ask(Window.GetWindow(this),
+            "切回智能微调模式",
+            "智能档位将重新获得下发能力。已保存的手工微调值会保留在 settings.json，但不再开机重放。",
+            new[]
+            {
+                "模式切换后，决策树按 1W 台阶 + 3 拍迟滞 + 升档冷却低频下发",
+                "L3 手工值不会被自动删除；可在下方「清除已保存的微调参数」显式删除",
+                "当前寄存器里的手工值不会立即撤销；如需回退请到「手工微调」页点「恢复原值」"
+            },
+            "切回智能微调");
+        if (!ok) return;
+        s.EnterIntelligentMode(clearManualValues: false);
+        RefreshMode();
+        RefreshSavedTuning();
     }
 
     private void Interval_Changed(object sender, SelectionChangedEventArgs e)
@@ -57,11 +104,12 @@ public partial class SettingsPage : UserControl
     {
         if (_loading || Session is not { } s) return;
 
-        s.Settings.AutoTakeover = TakeoverBox.IsChecked == true;
+        s.SetAutoTakeover(TakeoverBox.IsChecked == true);
         s.Settings.RestoreOnExit = RestoreBox.IsChecked == true;
         s.Settings.CloseToTray = TrayBox.IsChecked == true;
         s.SetReplayOnStartup(ReplayBox.IsChecked == true);
         RefreshSavedTuning();
+        RefreshMode();
     }
 
     private void RefreshSavedTuning()
@@ -74,11 +122,12 @@ public partial class SettingsPage : UserControl
         if (Session is not { } s) return;
         if (!ConfirmDialog.Ask(Window.GetWindow(this), "清除已保存的微调参数",
                 "清除后下次开机不再重放，CPU 将保持固件默认值。已写入寄存器的当前值不会立即撤销。",
-                new[] { "只清除本机保存的记录，不改动当前寄存器", "如需立即回退，请到高级参数页点「恢复原值」" },
+                new[] { "只清除本机保存的记录，不改动当前寄存器", "如需立即回退，请到「手工微调」页点「恢复原值」" },
                 "清除"))
             return;
         s.ClearManualTuning();
         RefreshSavedTuning();
+        RefreshMode();
     }
 
     private void Startup_Click(object sender, RoutedEventArgs e)

@@ -100,7 +100,7 @@ internal static class StressProbe
             sb.AppendLine($"标定前馈       : {session.ThermalCapText}");
             sb.AppendLine();
             sb.AppendLine("== 2. 软件到底会动哪些参数（代码事实）==");
-            sb.AppendLine($"· 通道后端：{MsrChannel.BackendName}。0.9.4 自带 WinRing0 内核驱动，可读可写 MSR。");
+            sb.AppendLine($"· 通道后端：{MsrChannel.BackendName}。PawnIO 内核驱动 + IntelMSR 模块，可读可写 MSR。");
             sb.AppendLine("· 写 MSR 0x610（PKG_POWER_LIMIT）：PL1 长时功耗墙 / PL2 短时爆发墙 / Tau 平均窗口。");
             sb.AppendLine("· 写 MSR 0x774 [31:24]：HWP EPP 能效偏好（本机 0x774 可读，写后回读校验）。");
             sb.AppendLine("· 只读 MSR 0x606 / 0x611（或 AMD 0xC0010299 / 0xC001029B）：RAPL 能量单位与能量计数器，用于算真实包功耗。");

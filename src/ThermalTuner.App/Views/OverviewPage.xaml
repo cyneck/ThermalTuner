@@ -4,223 +4,397 @@
              xmlns:controls="clr-namespace:ThermalTuner.App.Controls"
              Background="Transparent">
 
-  <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
+  <!-- 概览 = 唯一监控主视图：指标卡、统一时序图、决策凭证、压测与采样明细。
+       原「实时监控」页已合并删除；页面可纵向滚动。 -->
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                Padding="0,0,8,0">
+    <StackPanel>
 
-    <!-- 指标卡 -->
-    <Grid Grid.Row="0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-
-      <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
-        <StackPanel>
-          <TextBlock Text="CPU 封装温度" Style="{StaticResource Label}" />
-          <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-            <TextBlock Style="{StaticResource Metric}" Text="{Binding TempText, Mode=OneWay}" />
-            <TextBlock Text=" °C" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+      <!-- ============ v0.5.0 全局模式 / 写入状态条 ============ -->
+      <Border Background="{StaticResource BgSubtle}" BorderBrush="{StaticResource Border}"
+              BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Style="{StaticResource Chip}" Margin="0" VerticalAlignment="Center"
+                  Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}">
+            <TextBlock Text="{Binding TuningModeText, Mode=OneWay}" Style="{StaticResource Mono}"
+                       FontSize="11" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding ModeStatusText, Mode=OneWay}" Style="{StaticResource Label}"
+                       FontSize="11" TextWrapping="Wrap"
+                       ToolTip="{Binding MonitorHintText, Mode=OneWay}" />
+            <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,3,0,0"
+                       TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}"
+                       ToolTip="{Binding AutoApplyGateText, Mode=OneWay}">
+              <Run Text="写入闸门：" /><Run Text="{Binding GateReason, Mode=OneWay}" />
+            </TextBlock>
           </StackPanel>
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
-            <Run Text="天花板 " /><Run Text="{Binding CeilingText, Mode=OneWay}" />
-          </TextBlock>
-        </StackPanel>
+          <TextBlock Grid.Column="2" Text="{Binding CooldownText, Mode=OneWay}"
+                     Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center"
+                     Foreground="{StaticResource TextTertiary}" />
+        </Grid>
       </Border>
 
-      <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
-        <StackPanel>
-          <TextBlock Text="系统负载" Style="{StaticResource Label}" />
-          <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-            <TextBlock Style="{StaticResource Metric}" Text="{Binding LoadText, Mode=OneWay}" />
-            <TextBlock Text=" %" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+      <!-- ============ 统一指标卡（8 项，去重后） ============ -->
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,12">
+          <StackPanel>
+            <TextBlock Text="CPU 封装温度" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding TempText, Mode=OneWay}" />
+              <TextBlock Text=" °C" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+            </StackPanel>
+            <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
+              <Run Text="天花板 " /><Run Text="{Binding CeilingText, Mode=OneWay}" />
+            </TextBlock>
           </StackPanel>
-          <ProgressBar Height="3" Margin="0,10,0,0" Maximum="100" Value="{Binding LoadBar, Mode=OneWay}"
-                       Foreground="{StaticResource Accent}" Background="{StaticResource BgSubtle}" BorderThickness="0" />
-        </StackPanel>
-      </Border>
+        </Border>
 
-      <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0,0,12,0">
-        <StackPanel>
-          <TextBlock Text="决策 PL1（算法目标）" Style="{StaticResource Label}" />
-          <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-            <TextBlock Style="{StaticResource Metric}" Text="{Binding Pl1Text, Mode=OneWay}" />
-            <TextBlock Text=" W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,12">
+          <StackPanel>
+            <TextBlock Text="决策 PL1（算法目标）" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding Pl1Text, Mode=OneWay}" />
+              <TextBlock Text=" W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+            </StackPanel>
+            <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
+              <Run Text="默认功率 " /><Run Text="{Binding DefaultPowerText, Mode=OneWay}" /><Run Text=" W（实读 PL1）· 目标非实值" />
+            </TextBlock>
           </StackPanel>
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
-            <Run Text="默认功率 " /><Run Text="{Binding DefaultPowerText, Mode=OneWay}" /><Run Text=" W（实读 PL1）· 目标非实值" />
-          </TextBlock>
-        </StackPanel>
-      </Border>
+        </Border>
 
-      <Border Grid.Column="3" Style="{StaticResource Card}">
-        <StackPanel>
-          <TextBlock Text="{Binding PowerCaption, Mode=OneWay}" Style="{StaticResource Label}" />
-          <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-            <TextBlock Style="{StaticResource Metric}" Text="{Binding PowerText, Mode=OneWay}" />
-            <TextBlock Text=" W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+        <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Card}" Margin="0,0,12,12">
+          <StackPanel>
+            <TextBlock Text="{Binding PowerCaption, Mode=OneWay}" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding PowerText, Mode=OneWay}" />
+              <TextBlock Text=" W" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+            </StackPanel>
+            <TextBlock Text="{Binding PowerSourceText, Mode=OneWay}" Style="{StaticResource Label}"
+                       FontSize="11" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding PowerSourceText, Mode=OneWay}" />
           </StackPanel>
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0">
-            <Run Text="最高核频 " /><Run Text="{Binding ClockText, Mode=OneWay}" /><Run Text=" GHz" />
-          </TextBlock>
-        </StackPanel>
-      </Border>
-    </Grid>
+        </Border>
 
-    <!-- 双曲线 -->
-    <Grid Grid.Row="1" Margin="0,12,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
+        <Border Grid.Row="0" Grid.Column="3" Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Text="最高核频" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding ClockText, Mode=OneWay}" />
+              <TextBlock Text=" GHz" Style="{StaticResource Label}" VerticalAlignment="Bottom" Margin="2,0,0,4" />
+            </StackPanel>
+            <TextBlock Text="LHM 实读 · 非睿频倍率设定值" Style="{StaticResource Label}"
+                       FontSize="11" Margin="0,4,0,0" />
+          </StackPanel>
+        </Border>
 
-      <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+        <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0"
+                ToolTip="{Binding CpuLoadHintText, Mode=OneWay}">
+          <StackPanel>
+            <TextBlock Text="CPU 负载" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding CpuLoadText, Mode=OneWay}" />
+            </StackPanel>
+            <ProgressBar Height="3" Margin="0,10,0,0" Maximum="100" Value="{Binding LoadBar, Mode=OneWay}"
+                         Foreground="{StaticResource Accent}" Background="{StaticResource BgSubtle}" BorderThickness="0" />
+            <TextBlock Text="系统计时 · 0~100% · 与任务管理器同口径" Style="{StaticResource Label}"
+                       FontSize="11" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0"
+                ToolTip="{Binding GpuHintText, Mode=OneWay}">
+          <StackPanel>
+            <TextBlock Text="GPU 负载" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding GpuLoadText, Mode=OneWay}" />
+            </StackPanel>
+            <TextBlock Text="{Binding GpuCardSubtitleText, Mode=OneWay}" Style="{StaticResource Label}"
+                       FontSize="11" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Card}" Margin="0,0,12,0"
+                ToolTip="{Binding GpuMemoryHintText, Mode=OneWay}">
+          <StackPanel>
+            <TextBlock Text="GPU 专用显存占用" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding GpuMemoryText, Mode=OneWay}" />
+            </StackPanel>
+            <TextBlock Text="{Binding GpuMemoryDetailText, Mode=OneWay}" Style="{StaticResource Label}"
+                       FontSize="11" Margin="0,4,0,0" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Grid.Column="3" Style="{StaticResource Card}"
+                ToolTip="{Binding FanDetailText, Mode=OneWay}">
+          <StackPanel>
+            <TextBlock Text="风扇档位（EC 只读）" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Metric}" Text="{Binding FanMeasuredText, Mode=OneWay}"
+                         Foreground="{StaticResource Accent}" />
+            </StackPanel>
+            <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Foreground="{Binding FanHintBrush, Mode=OneWay}">
+              <Run Text="EC 原始值 " /><Run Text="{Binding FanRawText, Mode=OneWay}" />
+              <Run Text=" · " /><Run Text="{Binding FanMeasuredHintText, Mode=OneWay}" />
+            </TextBlock>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- ============ 统一时序图（多序列，各按自身量程归一化） ============ -->
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
         <StackPanel>
           <Grid>
-            <TextBlock Text="温度趋势" Style="{StaticResource H2}" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-              <Border Width="10" Height="2" Background="{StaticResource Accent}" VerticalAlignment="Center" />
-              <TextBlock Text="温度" Style="{StaticResource Label}" FontSize="11" Margin="6,0,12,0" />
-              <Border Width="10" Height="1" Background="{StaticResource Danger}" VerticalAlignment="Center" />
-              <TextBlock Text="天花板" Style="{StaticResource Label}" FontSize="11" Margin="6,0,0,0" />
-            </StackPanel>
+            <TextBlock Text="统一时序图" Style="{StaticResource H2}" />
+            <TextBlock Text="{Binding HistoryCaptionText, Mode=OneWay}" Style="{StaticResource Label}"
+                       FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" />
           </Grid>
-          <controls:SparkChart Height="150" Margin="0,10,0,0"
-                               Values="{Binding TempHistory}"
+          <TextBlock Text="各序列按自身量程独立归一化、共用时间轴；CPU 使用率在采样入口已钳到 0~100%；图例读数带真实单位，风扇附原始字节。天花板标注见右上角，温度接近上限时才出现虚线。"
+                     Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0"
+                     Foreground="{StaticResource TextTertiary}" TextWrapping="Wrap" />
+
+          <controls:MetricChart Height="200" Margin="0,10,0,0"
+                               Series="{Binding Metrics}"
                                Threshold="{Binding CeilingC}"
-                               AutoScale="True"
-                               Stroke="{StaticResource Accent}"
-                               Fill="#1A2E6F5F"
-                               ThresholdBrush="{StaticResource Danger}" />
+                               ThresholdSeriesKey="temp"
+                               ThresholdLabel="{Binding ThresholdLabelText}"
+                               StartLabel="{Binding HistoryStartText}" />
+
+          <ItemsControl ItemsSource="{Binding Metrics}" Margin="0,10,0,0">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <CheckBox IsChecked="{Binding Visible, Mode=TwoWay}" Margin="0,0,16,4"
+                          ToolTip="{Binding Tooltip}" VerticalContentAlignment="Center">
+                  <StackPanel Orientation="Horizontal">
+                    <Border Width="12" Height="3" Background="{Binding Stroke}"
+                            VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding Label}" FontSize="11" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondary}" />
+                    <TextBlock Text="{Binding CurrentText}" Style="{StaticResource Mono}" FontSize="11"
+                               Margin="5,0,0,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextPrimary}" />
+                  </StackPanel>
+                </CheckBox>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
       </Border>
 
-      <Border Grid.Column="1" Style="{StaticResource Card}">
-        <StackPanel>
-          <Grid>
-            <TextBlock Text="功耗趋势" Style="{StaticResource H2}" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-              <Border Width="10" Height="2" Background="{StaticResource Accent}" VerticalAlignment="Center" />
-              <TextBlock Text="决策 PL1" Style="{StaticResource Label}" FontSize="11" Margin="6,0,12,0" />
-              <Border Width="10" Height="2" Background="{StaticResource Warn}" VerticalAlignment="Center" />
-              <TextBlock Text="实测包功耗" Style="{StaticResource Label}" FontSize="11" Margin="6,0,0,0" />
-            </StackPanel>
-          </Grid>
-          <controls:SparkChart Height="150" Margin="0,10,0,0"
-                               Values="{Binding Pl1History}"
-                               SecondaryValues="{Binding PowerHistory}"
-                               AutoScale="True"
-                               Stroke="{StaticResource Accent}"
-                               SecondaryStroke="{StaticResource Warn}"
-                               Fill="#1A2E6F5F" />
-        </StackPanel>
+      <!-- ============ 决策凭证 + 决策流水 ============ -->
+      <Grid Margin="0,12,0,0" Height="284">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="1.15*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+          <StackPanel>
+            <TextBlock Text="最新决策凭证" Style="{StaticResource H2}" />
+
+            <Border Background="{StaticResource AccentSoft}" CornerRadius="6" Padding="10,6" Margin="0,10,0,0"
+                    HorizontalAlignment="Left">
+              <TextBlock Text="{Binding LastRule, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"
+                         Foreground="{StaticResource AccentDeep}" />
+            </Border>
+
+            <TextBlock Text="{Binding LastReason, Mode=OneWay}" Style="{StaticResource Body}"
+                       Margin="0,10,0,0" MaxHeight="60" />
+
+            <TextBlock Text="评估路径" Style="{StaticResource Label}" Margin="0,10,0,4" />
+            <TextBlock Text="{Binding LastPath, Mode=OneWay}" Style="{StaticResource Mono}"
+                       TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
+
+            <Grid Margin="0,12,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock Text="决策 PL1" Style="{StaticResource Label}" FontSize="11" />
+                <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
+                  <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
+                </TextBlock>
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="PL2" Style="{StaticResource Label}" FontSize="11" />
+                <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
+                  <Run Text="{Binding Pl2Text, Mode=OneWay}" /><Run Text=" W" />
+                </TextBlock>
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="Tau" Style="{StaticResource Label}" FontSize="11" />
+                <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
+                  <Run Text="{Binding TauText, Mode=OneWay}" /><Run Text=" s" />
+                </TextBlock>
+              </StackPanel>
+              <StackPanel Grid.Column="3">
+                <TextBlock Text="EPP" Style="{StaticResource Label}" FontSize="11" />
+                <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}"
+                           Text="{Binding EppText, Mode=OneWay}" />
+              </StackPanel>
+            </Grid>
+
+            <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,12,0,0">
+              <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
+                         Text="{Binding MonitorHintText, Mode=OneWay}" />
+            </Border>
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1" Style="{StaticResource Card}">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="决策流水" Style="{StaticResource H2}" />
+            <Grid DockPanel.Dock="Top" Margin="0,8,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="56" />
+                <ColumnDefinition Width="118" />
+                <ColumnDefinition Width="64" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="时间" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Grid.Column="1" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Grid.Column="2" Text="PL1" Style="{StaticResource Label}" FontSize="11" />
+              <TextBlock Grid.Column="3" Text="因果理由" Style="{StaticResource Label}" FontSize="11" />
+            </Grid>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding Decisions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="0,6">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="56" />
+                          <ColumnDefinition Width="118" />
+                          <ColumnDefinition Width="64" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Time}" Style="{StaticResource Mono}" FontSize="11"
+                                   VerticalAlignment="Top" />
+                        <TextBlock Grid.Column="1" Text="{Binding Rule}" Style="{StaticResource RowText}"
+                                   FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentDeep}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Text="{Binding Pl1}" Style="{StaticResource Mono}" FontSize="11"
+                                   VerticalAlignment="Top" />
+                        <TextBlock Grid.Column="3" Text="{Binding Reason}" Style="{StaticResource RowText}"
+                                   FontSize="11" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Grid>
+
+      <!-- ============ 压测与导出（原「实时监控」页工具条） ============ -->
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <Grid>
+          <StackPanel Orientation="Horizontal">
+            <Button Content="{Binding RunButtonText, Mode=OneWay}" Style="{StaticResource PrimaryButton}"
+                    Click="ToggleRun_Click" MinWidth="96" />
+            <CheckBox x:Name="StressBox" Content="施加压测负载" Style="{StaticResource Switch}"
+                      Margin="16,0,0,0" VerticalAlignment="Center"
+                      Checked="Stress_Checked" Unchecked="Stress_Unchecked" />
+            <TextBlock Text="负载场景" Style="{StaticResource Label}" Margin="16,0,8,0" VerticalAlignment="Center" />
+            <ComboBox x:Name="KernelBox" Width="140" Height="30" VerticalContentAlignment="Center"
+                      SelectionChanged="Kernel_Changed" SelectedIndex="2">
+              <ComboBoxItem Content="整数 ALU" Tag="ScalarInt" />
+              <ComboBoxItem Content="标量浮点" Tag="ScalarFloat" />
+              <ComboBoxItem Content="SIMD/FMA（最重）" Tag="SimdFma" />
+              <ComboBoxItem Content="内存带宽" Tag="MemoryStream" />
+              <ComboBoxItem Content="混合轮换" Tag="Mixed" />
+              <ComboBoxItem Content="占空比脉冲" Tag="Pulse" />
+            </ComboBox>
+            <TextBlock Text="采样间隔" Style="{StaticResource Label}" Margin="20,0,8,0" VerticalAlignment="Center" />
+            <ComboBox x:Name="IntervalBox" Width="96" Height="30" VerticalContentAlignment="Center"
+                      SelectionChanged="Interval_Changed">
+              <ComboBoxItem Content="500 ms" Tag="500" />
+              <ComboBoxItem Content="1000 ms" Tag="1000" IsSelected="True" />
+              <ComboBoxItem Content="2000 ms" Tag="2000" />
+            </ComboBox>
+            <TextBlock x:Name="CountText" Style="{StaticResource Label}" Margin="16,0,0,0"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+
+          <Button Content="导出 CSV" Style="{StaticResource GhostButton}" HorizontalAlignment="Right"
+                  Click="Export_Click" />
+        </Grid>
       </Border>
-    </Grid>
 
-    <!-- 决策凭证 + 流水 -->
-    <Grid Grid.Row="2" Margin="0,12,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="1.15*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-
-      <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
-        <StackPanel>
-          <TextBlock Text="最新决策凭证" Style="{StaticResource H2}" />
-
-          <Border Background="{StaticResource AccentSoft}" CornerRadius="6" Padding="10,6" Margin="0,10,0,0"
-                  HorizontalAlignment="Left">
-            <TextBlock Text="{Binding LastRule, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"
-                       Foreground="{StaticResource AccentDeep}" />
-          </Border>
-
-          <TextBlock Text="{Binding LastReason, Mode=OneWay}" Style="{StaticResource Body}"
-                     Margin="0,10,0,0" MaxHeight="72" />
-
-          <TextBlock Text="评估路径" Style="{StaticResource Label}" Margin="0,14,0,4" />
-          <TextBlock Text="{Binding LastPath, Mode=OneWay}" Style="{StaticResource Mono}"
-                     TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" />
-
-          <Grid Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0">
-              <TextBlock Text="决策 PL1" Style="{StaticResource Label}" FontSize="11" />
-              <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
-                <Run Text="{Binding Pl1Text, Mode=OneWay}" /><Run Text=" W" />
-              </TextBlock>
-            </StackPanel>
-            <StackPanel Grid.Column="1">
-              <TextBlock Text="PL2" Style="{StaticResource Label}" FontSize="11" />
-              <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
-                <Run Text="{Binding Pl2Text, Mode=OneWay}" /><Run Text=" W" />
-              </TextBlock>
-            </StackPanel>
-            <StackPanel Grid.Column="2">
-              <TextBlock Text="Tau" Style="{StaticResource Label}" FontSize="11" />
-              <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}">
-                <Run Text="{Binding TauText, Mode=OneWay}" /><Run Text=" s" />
-              </TextBlock>
-            </StackPanel>
-            <StackPanel Grid.Column="3">
-              <TextBlock Text="EPP" Style="{StaticResource Label}" FontSize="11" />
-              <TextBlock Style="{StaticResource Mono}" FontSize="14" Foreground="{StaticResource TextPrimary}"
-                         Text="{Binding EppText, Mode=OneWay}" />
-            </StackPanel>
-          </Grid>
-
-          <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
-            <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="{Binding MonitorHintText, Mode=OneWay}" />
-          </Border>
-        </StackPanel>
-      </Border>
-
-      <Border Grid.Column="1" Style="{StaticResource Card}">
+      <!-- ============ 采样明细（含风扇实测列） ============ -->
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0" Height="260">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="决策流水" Style="{StaticResource H2}" />
-          <Grid DockPanel.Dock="Top" Margin="0,8,0,4">
+          <TextBlock DockPanel.Dock="Top" Text="采样明细（最新在上）" Style="{StaticResource H2}" />
+
+          <Grid DockPanel.Dock="Top" Margin="0,8,0,6">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="56" />
-              <ColumnDefinition Width="118" />
-              <ColumnDefinition Width="64" />
+              <ColumnDefinition Width="70" />
+              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="80" />
+              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="70" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="时间" Style="{StaticResource Label}" FontSize="11" />
-            <TextBlock Grid.Column="1" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
-            <TextBlock Grid.Column="2" Text="PL1" Style="{StaticResource Label}" FontSize="11" />
-            <TextBlock Grid.Column="3" Text="因果理由" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="1" Text="温度" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="2" Text="负载" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="3" Text="包功耗" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="4" Text="PL1 实效" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="5" Text="风扇" Style="{StaticResource Label}" FontSize="11" />
+            <TextBlock Grid.Column="6" Text="命中规则" Style="{StaticResource Label}" FontSize="11" />
           </Grid>
+
           <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Decisions}">
+            <ItemsControl ItemsSource="{Binding Samples}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="0,6">
+                  <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="0,5">
                     <Grid>
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="56" />
-                        <ColumnDefinition Width="118" />
-                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="70" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
-                      <TextBlock Text="{Binding Time}" Style="{StaticResource Mono}" FontSize="11"
-                                 VerticalAlignment="Top" />
-                      <TextBlock Grid.Column="1" Text="{Binding Rule}" Style="{StaticResource RowText}"
-                                 FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentDeep}"
-                                 TextWrapping="Wrap" />
-                      <TextBlock Grid.Column="2" Text="{Binding Pl1}" Style="{StaticResource Mono}" FontSize="11"
-                                 VerticalAlignment="Top" />
-                      <TextBlock Grid.Column="3" Text="{Binding Reason}" Style="{StaticResource RowText}"
-                                 FontSize="11" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Time}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="1" Text="{Binding Temp}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="2" Text="{Binding Load}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="3" Text="{Binding Power}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="4" Text="{Binding Pl1}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="5" Text="{Binding Fan}" Style="{StaticResource Mono}" FontSize="11" />
+                      <TextBlock Grid.Column="6" Text="{Binding Rule}" Style="{StaticResource RowText}" FontSize="11"
+                                 Foreground="{StaticResource TextSecondary}" />
                     </Grid>
                   </Border>
                 </DataTemplate>
@@ -229,6 +403,7 @@
           </ScrollViewer>
         </DockPanel>
       </Border>
-    </Grid>
-  </Grid>
+
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>
