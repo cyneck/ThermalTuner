@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -96,8 +96,8 @@ public partial class ParamsPage : UserControl
         SetUnlocked(!_unlocked);
         if (_unlocked)
             ShowOutcome(Session is { RealWriteEnabled: true }
-                ? "已解锁：修改后点「应用（真实写入）」，写入会先备份原值并回读校验。"
-                : "已解锁：修改后点「应用（演练）」。当前通道不可写，只走校验与确认流程。");
+                ? "已解锁：修改后点「保存并下发」，写入前会自动备份原值并回读校验。"
+                : "已解锁：修改后点「保存并下发（演练）」，当前通道不可写，只走校验与确认流程。");
         else
             OutcomeBanner.Visibility = Visibility.Collapsed;
     }
@@ -127,7 +127,7 @@ public partial class ParamsPage : UserControl
         _syncing = false;
 
         Validate();
-        ShowOutcome($"已按「{s.ProfileLabel}」档位填入默认 PL2 / Tau / EPP，PL1 与睿频倍率保持当前实读值。");
+        ShowOutcome($"已按「{s.ProfileLabel}」档位填入默认短时上限 / 短时时长 / 能效偏好，持续功耗与睿频保持当前实测值。");
     }
 
     // ---------------- 校验 ----------------
@@ -184,7 +184,16 @@ public partial class ParamsPage : UserControl
             }
         }
 
-        var diffs = BuildDiff();
+        // 读不到寄存器当前值时，差异基线不可信，直接不比较；
+        // 这种降级态必须说清「实读不可用」，不能表述成「沿用固件当前值」。
+        bool baselineReadable = !double.IsNaN(s.FwPl1W);
+        var diffs = baselineReadable ? BuildDiff() : new List<string>();
+        if (!baselineReadable)
+        {
+            _violations.Add(new ViolationItem(
+                "✕ 读不到寄存器当前值，无法计算差异，已禁止下发；请以管理员重启后重试",
+                (Brush)FindResource("Danger")));
+        }
 
         if (parseOk)
         {
@@ -193,7 +202,7 @@ public partial class ParamsPage : UserControl
                 // 固件自带的合法编码（如 Tau 28672s）只是超出建议步长，不是用户输入错误；
                 // 未改动该项时不警告，避免「什么都没改却报违规」。
                 if (v.Severity == ParamSeverity.Warn && v.Key == "Tau" &&
-                    !diffs.Any(d => d.StartsWith("Tau ")))
+                    !diffs.Any(d => d.StartsWith("短时时长 ")))
                     continue;
 
                 _violations.Add(new ViolationItem(
@@ -206,11 +215,13 @@ public partial class ParamsPage : UserControl
 
         if (_violations.Count == 0)
             _violations.Add(new ViolationItem(
-                diffs.Count == 0 ? "✓ 沿用固件当前值，无待应用改动" : "✓ 全部参数通过物理约束校验",
+                diffs.Count == 0 ? "✓ 全部参数与当前实读一致，无待应用改动" : "✓ 全部参数通过物理约束校验",
                 (Brush)FindResource("Accent")));
 
-        DiffText.Text = diffs.Count == 0 ? "无改动" : $"待应用 {diffs.Count} 项改动";
-        ApplyButton.IsEnabled = _unlocked && parseOk && turboRangeOk
+        DiffText.Text = !baselineReadable
+            ? "实读不可用 · 未比较"
+            : diffs.Count == 0 ? "无改动" : $"待应用 {diffs.Count} 项改动";
+        ApplyButton.IsEnabled = _unlocked && parseOk && turboRangeOk && baselineReadable
                                 && !_violations.Any(v => v.Text.StartsWith("✕")) && diffs.Count > 0;
     }
 
@@ -236,19 +247,19 @@ public partial class ParamsPage : UserControl
 
         if (double.TryParse(Pl1Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double pl1)
             && Math.Abs(pl1 - basePl1) > 0.05)
-            list.Add($"PL1 {basePl1:F1}W → {pl1:F1}W");
+            list.Add($"持续功耗 {basePl1:F1}W → {pl1:F1}W");
 
         if (double.TryParse(Pl2Box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double pl2)
             && Math.Abs(pl2 - basePl2) > 0.05)
-            list.Add($"PL2 {basePl2:F1}W → {pl2:F1}W");
+            list.Add($"短时上限 {basePl2:F1}W → {pl2:F1}W");
 
         if (double.TryParse(TauBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double tau)
             && Math.Abs(tau - baseTau) > 0.05)
-            list.Add($"Tau {baseTau:F0}s → {tau:F0}s");
+            list.Add($"短时时长 {baseTau:F0}s → {tau:F0}s");
 
         // 0x774 读不到时 EPP 不可编辑，也不参与 diff，避免把决策默认值当成用户改动
         if (s.EppEditable && int.TryParse(EppBox.Text, out int epp) && epp != baseEpp)
-            list.Add($"EPP {baseEpp} → {epp}");
+            list.Add($"能效偏好 {baseEpp} → {epp}");
 
         // 睿频：基线是「当前实读的全核档位」，目标是把各档统一拉平到输入值
         if (s.TurboEditable && int.TryParse(TurboBox.Text, out int turbo)
@@ -292,6 +303,12 @@ public partial class ParamsPage : UserControl
     {
         if (Session is not { } s) return;
 
+        if (double.IsNaN(s.FwPl1W))
+        {
+            ShowOutcome("读不到寄存器当前值（普通权限或通道不可用），无法计算差异，已拒绝下发。请以管理员重启后重试。");
+            return;
+        }
+
         var diffs = BuildDiff();
         if (diffs.Count == 0) { ShowOutcome("没有需要应用的改动。"); return; }
 
@@ -303,7 +320,7 @@ public partial class ParamsPage : UserControl
 
         var items = new List<string>(diffs);
         items.Add(real
-            ? "写入前自动备份 0x610 原值；回读不一致会立即回滚"
+            ? "写入前自动备份当前功耗参数；回读不一致会立即回滚"
             : "演练模式：不写硬件，仅验证校验与确认流程");
         if (real)
         {
@@ -404,7 +421,7 @@ public partial class ParamsPage : UserControl
         ShowOutcome(result.Ok
             ? $"写入成功：{result.Message}" + (tauChanged ? "" : "（时间窗口保持原值）") +
               hwpNote + turboNote + voltageNote +
-              "；L3 用户编辑值已保存，开机自动重放；已切换到「手工微调」模式，智能档位只演算；重新标定不会覆盖它。"
+              "；我的设置已保存，开机自动重放；已切换到「手工微调」模式，智能档位只演算；重新检测不会覆盖它。"
             : $"写入失败：{result.Message}（参数未保存，模式未切换）");
 
         RefreshMsrUi();
@@ -418,9 +435,9 @@ public partial class ParamsPage : UserControl
         var items = new List<string>();
         if (s.HasMsrBackup && s.MsrWritable)
         {
-            items.Add("将把 0x610 写回启动时备份的原始值（PL1/PL2/时间窗口）");
-            items.Add("把 0x1AD 睿频倍率表恢复为出厂档位；0x774 HWP 全字段同样恢复（如可读）");
-            items.Add("把 0x150 电压偏移强制回零（个性化项不留在寄存器里）");
+            items.Add("把功耗参数（持续上限 / 短时上限 / 短时时长）写回启动时备份的原始值");
+            items.Add("把睿频上限恢复为出厂档位；能效偏好与性能档同样恢复（如可读）");
+            items.Add("把电压偏移强制回零（个性化项不留在硬件里）");
             items.Add("恢复后立即回读校验，不一致则报错并保留审计记录");
         }
         else

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -89,8 +89,8 @@ public partial class TuningPage : UserControl
 
         var outcome = s.ApplyProfile(profile, force: plan.NeedConfirmation);
         ShowOutcome(outcome.Ok
-                ? $"已下发 {outcome.StepPl1W}W 到 0x610 并回读校验 · 「{plan.ProfileLabel}」天花板 " +
-                  $"{plan.CeilingC:F0}°C。注意：功耗/频率真正收敛仍需 Tau 量级时间，不等于性能立刻变化。"
+                ? $"已下发 {outcome.StepPl1W}W 并回读一致 · 「{plan.ProfileLabel}」天花板 " +
+                  $"{plan.CeilingC:F0}°C。功耗收敛需要 Tau 量级时间，性能不会立刻变化。"
                 : $"档位意图已更新为「{plan.ProfileLabel}」（天花板 {plan.CeilingC:F0}°C）；" +
                   $"硬件下发结果：{outcome.Message}",
             outcome.Ok);
@@ -102,11 +102,11 @@ public partial class TuningPage : UserControl
         if (!plan.GatesOpen)
             yield return "确认后若写入闸门仍不可用，只更新档位意图并记录原因，不会静默假装已写入";
         if (plan.LeaveManualMode)
-            yield return "将停止开机重放并清除已保存的手工微调值（L3）；此操作不可自动撤销";
+            yield return "将停止开机重放并清除已保存的手工微调值；此操作不可自动撤销";
         if (plan.CooldownRemainingS > 0 && plan.DeltaW > 0)
             yield return $"本次确认会绕过剩余 {plan.CooldownRemainingS:F0}s 升档冷却，仅这一次";
-        yield return "写入前备份 0x610 原值，写入后立即回读校验，失败自动回滚并留审计";
-        yield return "只写 0x610 的 PL1/PL2；Tau 保持寄存器原值，EPP / 风扇从不写入";
+        yield return "写入前备份当前功耗参数，写入后立即回读校验，失败自动回滚并留审计";
+        yield return "只改写持续 / 短时功耗上限；短时时长保持原值，能效偏好与风扇在智能链路不写入";
         yield return "高温 ≥ 安全上限时的「只降不升」仍是硬红线，本确认无法解除";
     }
 
@@ -131,7 +131,7 @@ public partial class TuningPage : UserControl
     {
         if (Session is not { } s) return;
         if (!s.RestartElevated())
-            MessageBox.Show("已取消提权重启。读取真实功耗与 MSR 都需要管理员权限，权限不足时只能看估算值。",
+            MessageBox.Show("已取消提权重启。读取真实功耗与硬件参数都需要管理员权限，权限不足时只能看估算值。",
                 "ThermalTuner", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -33,7 +33,8 @@ public partial class SettingsPage : UserControl
         RealWriteBox.IsChecked = s.Settings.AllowRealWrite;
         ReplayBox.IsChecked = s.Settings.ReplayOnStartup;
         StartupBox.IsChecked = StartupRegistration.IsEnabled();
-        MsrStatusLine.Text = $"MSR 通道：{s.MsrStatusText} —— {s.MsrDetail}";
+        MsrStatusLine.Text = $"调优通道：{s.MsrSummary}";
+        MsrStatusLine.ToolTip = s.MsrDetail;
         RefreshSavedTuning();
 
         foreach (ComboBoxItem item in IntervalBox.Items)
@@ -70,7 +71,7 @@ public partial class SettingsPage : UserControl
     private void RefreshMode()
     {
         if (Session is not { } s) return;
-        ModeLine.Text = $"当前模式：{s.TuningModeText} · {s.CooldownText} · {s.AutoApplyGateText}";
+        ModeLine.Text = $"{s.TuningModeText} · {s.CooldownText}";
         SwitchModeButton.Visibility = s.IsManualModePublic ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -83,7 +84,7 @@ public partial class SettingsPage : UserControl
             new[]
             {
                 "模式切换后，决策树按 1W 台阶 + 3 拍迟滞 + 升档冷却低频下发",
-                "L3 手工值不会被自动删除；可在下方「清除已保存的微调参数」显式删除",
+                "手工微调值不会被自动删除；可在下方「清除已保存的微调参数」显式删除",
                 "当前寄存器里的手工值不会立即撤销；如需回退请到「手工微调」页点「恢复原值」"
             },
             "切回智能微调");
@@ -150,13 +151,13 @@ public partial class SettingsPage : UserControl
         if (!wanted)
         {
             s.SetAllowRealWrite(false);
-            MsrStatusLine.Text = $"MSR 通道：{s.MsrStatusText} —— 已关闭实写";
+            MsrStatusLine.Text = "调优通道：写入已关闭";
             return;
         }
 
         if (!s.MsrWritable)
         {
-            MessageBox.Show($"当前通道不可写：{s.MsrDetail}\n\n请以管理员身份运行，并确认 WinRing0 驱动未被 HVCI 内存完整性或安全软件拦截。",
+            MessageBox.Show($"当前通道不可写：{s.MsrDetail}\n\n请以管理员身份运行，并在「诊断与日志」页确认调优组件已就绪。",
                 "ThermalTuner", MessageBoxButton.OK, MessageBoxImage.Warning);
             RealWriteBox.IsChecked = false;
             return;
@@ -165,10 +166,10 @@ public partial class SettingsPage : UserControl
         bool confirmed = ConfirmDialog.Ask(
             Window.GetWindow(this),
             "开启真实写入",
-            "开启后，应用参数会立即改变 CPU 功耗上限（PL1/PL2），可能影响性能、温度与稳定性。",
+            "开启后，应用参数会立即改变 CPU 功耗上限，可能影响性能、温度与稳定性。",
             new[]
             {
-                "写入前会备份 0x610 原值到本地",
+                "写入前会备份当前功耗参数到本地",
                 "写入后立即回读校验，不一致自动回滚",
                 "退出程序时可按设置恢复原值",
                 "建议先在低风险档位试用，确认机器稳定后再长期使用"
@@ -182,7 +183,8 @@ public partial class SettingsPage : UserControl
         }
 
         s.SetAllowRealWrite(true);
-        MsrStatusLine.Text = $"MSR 通道：{s.MsrStatusText} —— 实写已授权";
+        MsrStatusLine.Text = "调优通道：写入已授权";
+        MsrStatusLine.ToolTip = s.MsrDetail;
     }
 
     private void OpenDataDir_Click(object sender, RoutedEventArgs e)

@@ -1,4 +1,4 @@
-<UserControl x:Class="ThermalTuner.App.Views.SettingsPage"
+﻿<UserControl x:Class="ThermalTuner.App.Views.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="Transparent">
@@ -17,19 +17,20 @@
 
           <Grid Margin="0,12,0,0">
             <TextBlock Text="采样间隔" Style="{StaticResource Label}" VerticalAlignment="Center" />
-            <ComboBox x:Name="IntervalBox" Width="120" Height="30" HorizontalAlignment="Right"
-                      VerticalContentAlignment="Center" SelectionChanged="Interval_Changed">
+            <ComboBox x:Name="IntervalBox" Width="120" Height="28" HorizontalAlignment="Right"
+                      VerticalContentAlignment="Center" SelectionChanged="Interval_Changed"
+                      ToolTip="1s 是热控推荐值：更慢会漏掉瞬时高温，更快对体验没有意义。">
               <ComboBoxItem Content="500 ms" Tag="500" />
               <ComboBoxItem Content="1000 ms" Tag="1000" />
               <ComboBoxItem Content="2000 ms" Tag="2000" />
             </ComboBox>
           </Grid>
 
-          <Grid Margin="0,12,0,0">
-            <TextBlock Text="升档冷却" Style="{StaticResource Label}" VerticalAlignment="Center"
-                       ToolTip="只约束升档写入，让 RAPL 按 Tau 窗口收敛；降档与高温降档立即放行" />
-            <ComboBox x:Name="CooldownBox" Width="120" Height="30" HorizontalAlignment="Right"
-                      VerticalContentAlignment="Center" SelectionChanged="Cooldown_Changed">
+          <Grid Margin="0,10,0,0">
+            <TextBlock Text="升档冷却" Style="{StaticResource Label}" VerticalAlignment="Center" />
+            <ComboBox x:Name="CooldownBox" Width="120" Height="28" HorizontalAlignment="Right"
+                      VerticalContentAlignment="Center" SelectionChanged="Cooldown_Changed"
+                      ToolTip="两次升档写入之间的最短间隔，让功耗读数在能耗统计窗口内稳定；降档与高温降档立即放行。">
               <ComboBoxItem Content="5 s" Tag="5" />
               <ComboBoxItem Content="10 s" Tag="10" />
               <ComboBoxItem Content="15 s" Tag="15" />
@@ -39,43 +40,36 @@
               <ComboBoxItem Content="60 s" Tag="60" />
             </ComboBox>
           </Grid>
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                     Foreground="{StaticResource TextTertiary}"
-                     Text="默认 20s（本机实测热惯性 5~15s + 余量，与 Tau 16~32s 同量级）。自适应冷却公式属 P1 研究项，本期只做热事件埋点，不实现未验证系数。" />
 
-          <CheckBox x:Name="TakeoverBox" Content="智能模式下允许决策树持续动态微调"
-                    Style="{StaticResource Switch}" Margin="0,14,0,0" Click="Toggle_Click" />
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
-                     Foreground="{StaticResource TextTertiary}"
-                     Text="关闭后，选中档位仍立即下发一次，只是决策树不再每拍动态改 PL1。" />
-          <CheckBox x:Name="RestoreBox" Content="退出程序时恢复 MSR 原值"
-                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click" />
-          <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘（采样继续）"
-                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click" />
-          <CheckBox x:Name="StartupBox" Content="开机自动启动（HKCU，无需管理员）"
-                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Startup_Click" />
-          <CheckBox x:Name="RealWriteBox" Content="允许写入 MSR（真实修改功耗，默认关闭）"
-                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="RealWrite_Click" />
-          <TextBlock x:Name="MsrStatusLine" Style="{StaticResource Label}" FontSize="11" Margin="0,8,0,0"
-                     TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}" />
+          <Border Style="{StaticResource Divider}" Margin="0,14,0,0" />
 
-          <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
-            <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="1s 采样是热控的推荐值：更慢会漏掉瞬时 PROCHOT，更快对体验没有意义。" />
-          </Border>
+          <CheckBox x:Name="TakeoverBox" Content="智能模式下持续动态微调"
+                    Style="{StaticResource Switch}" Margin="0,12,0,0" Click="Toggle_Click"
+                    ToolTip="关闭后，选中档位仍立即写入一次，只是决策树不再每秒改动功耗上限。" />
+          <CheckBox x:Name="RestoreBox" Content="退出程序时恢复寄存器原值"
+                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click"
+                    ToolTip="退出前把本次改过的功耗、能效、睿频与电压项写回启动备份；本机不可写的项自动跳过，并在事件中心说明。" />
+          <CheckBox x:Name="TrayBox" Content="关闭窗口时最小化到托盘"
+                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Toggle_Click"
+                    ToolTip="采样继续在后台运行，双击托盘图标可重新打开。" />
+          <CheckBox x:Name="StartupBox" Content="开机自动启动"
+                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="Startup_Click"
+                    ToolTip="写入当前用户启动项，不需要管理员权限。" />
+          <CheckBox x:Name="RealWriteBox" Content="允许把设置写入硬件（默认关闭）"
+                    Style="{StaticResource Switch}" Margin="0,10,0,0" Click="RealWrite_Click"
+                    ToolTip="开启后会真实改变 CPU 功耗上限。勾选前需通道可写且为管理员，开启时会二次确认。" />
+
+          <TextBlock x:Name="MsrStatusLine" Style="{StaticResource Hint}" Margin="0,8,0,0" />
         </StackPanel>
       </Border>
 
       <Border Style="{StaticResource Card}" Margin="0,12,0,0">
         <StackPanel>
-          <TextBlock Text="调优模式（单一真值源）" Style="{StaticResource H2}" />
-          <TextBlock x:Name="ModeLine" Style="{StaticResource Mono}" FontSize="11" Margin="0,8,0,0"
+          <TextBlock Text="调优模式" Style="{StaticResource H2}" />
+          <TextBlock x:Name="ModeLine" Style="{StaticResource Mono}" FontSize="12" Margin="0,8,0,0"
                      TextWrapping="Wrap" />
-          <TextBlock Text="{Binding ModeStatusText, Mode=OneWay}" Style="{StaticResource Label}"
-                     FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                     Foreground="{StaticResource TextTertiary}" />
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                     Text="智能微调：选中档位立即下发，之后阶梯式低频动态微调。手工微调：参数由手工页保存并下发，智能档位与决策树只演算。两者互斥，切换会二次确认。" />
+          <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                     Text="智能：选档即下发；手工：参数由手工页保存后下发。两者互斥，切换需确认。" />
           <Button x:Name="SwitchModeButton" Content="切回智能微调" Style="{StaticResource GhostButton}"
                   Margin="0,10,0,0" HorizontalAlignment="Left" Click="SwitchMode_Click"
                   Visibility="Collapsed" />
@@ -94,58 +88,60 @@
           </StackPanel>
         </StackPanel>
       </Border>
-
-      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
-        <StackPanel>
-          <TextBlock Text="优化参数的持久化" Style="{StaticResource H2}" />
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"
-                     Text="固件里的 PL1/PL2 是出厂默认，掉电即恢复、无法持久化。能持久化的只有软件侧的实测标定与手动微调值：每次开机由本软件写回寄存器；软件不运行时 CPU 按固件默认散热逻辑运转。" />
-          <CheckBox x:Name="ReplayBox" Content="开机自动重放已保存的微调参数（需管理员 + 写入授权）"
-                    Style="{StaticResource Switch}" Margin="0,12,0,0" Click="Toggle_Click" />
-          <TextBlock x:Name="SavedTuningText" Style="{StaticResource Mono}" FontSize="11" Margin="0,10,0,0"
-                     TextWrapping="Wrap" Foreground="{StaticResource TextTertiary}" />
-          <Button Content="清除已保存的微调参数" Style="{StaticResource GhostButton}" Margin="0,10,0,0"
-                  HorizontalAlignment="Left" Click="ClearTuning_Click" />
-        </StackPanel>
-      </Border>
     </StackPanel>
 
     <StackPanel Grid.Column="1">
       <Border Style="{StaticResource Card}">
         <StackPanel>
-          <TextBlock Text="安全与许可" Style="{StaticResource H2}" />
-          <TextBlock Style="{StaticResource Label}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"
-                     Text="本工具涉及内核级硬件访问，分发前必须复核下列组件许可与签名要求。" />
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="持久化" Style="{StaticResource H2}" />
+            <Border Style="{StaticResource TipBadge}"
+                    ToolTip="出厂自带的功耗参数是默认值，掉电即恢复、无法持久化。能保存的只有本程序测出的推荐值与你的手动微调，由程序在开机时写回硬件；程序不运行时，CPU 按出厂默认逻辑运转。">
+              <TextBlock Style="{StaticResource TipGlyph}" />
+            </Border>
+          </StackPanel>
 
-          <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,12,0,0" />
+          <CheckBox x:Name="ReplayBox" Content="开机自动重放已保存的微调参数"
+                    Style="{StaticResource Switch}" Margin="0,12,0,0" Click="Toggle_Click"
+                    ToolTip="需要管理员权限与写入授权；未授权时只提示、不写入。" />
+          <TextBlock x:Name="SavedTuningText" Style="{StaticResource Hint}" Margin="0,10,0,0" />
+          <Button Content="清除已保存的微调参数" Style="{StaticResource GhostButton}" Margin="0,10,0,0"
+                  HorizontalAlignment="Left" Click="ClearTuning_Click"
+                  ToolTip="只清除本机保存的记录，不改动当前寄存器。" />
+        </StackPanel>
+      </Border>
 
-          <Grid Margin="0,10,0,0">
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+        <StackPanel>
+          <TextBlock Text="组件与许可" Style="{StaticResource H2}" />
+
+          <Grid Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="140" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-              <RowDefinition Height="24" />
-              <RowDefinition Height="24" />
-              <RowDefinition Height="24" />
-              <RowDefinition Height="24" />
+              <RowDefinition Height="26" />
+              <RowDefinition Height="26" />
+              <RowDefinition Height="26" />
+              <RowDefinition Height="26" />
             </Grid.RowDefinitions>
 
             <TextBlock Text="LibreHardwareMonitor" Style="{StaticResource Label}" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="MPL-2.0 · 允许商用，修改文件需开源" Style="{StaticResource Mono}"
-                       FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock Grid.Column="1" Text="MPL-2.0" Style="{StaticResource Mono}"
+                       FontSize="11" VerticalAlignment="Center" />
 
             <TextBlock Grid.Row="1" Text="PawnIO" Style="{StaticResource Label}" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="按其发行许可 · 需用户自行安装签名驱动"
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="随程序提供 · 可在诊断页安装 / 修复"
                        Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
 
             <TextBlock Grid.Row="2" Text=".NET 8" Style="{StaticResource Label}" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="2" Grid.Column="1" Text="MIT · 框架依赖发布" Style="{StaticResource Mono}"
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="MIT" Style="{StaticResource Mono}"
                        FontSize="11" VerticalAlignment="Center" />
 
             <TextBlock Grid.Row="3" Text="代码签名" Style="{StaticResource Label}" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="3" Grid.Column="1" Text="未签名（发布前需证书，否则易被 Defender 拦截）"
-                       Style="{StaticResource Mono}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="未签名" Style="{StaticResource Mono}"
+                       FontSize="11" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
       </Border>
@@ -153,10 +149,12 @@
       <Border Style="{StaticResource Card}" Margin="0,12,0,0">
         <StackPanel>
           <TextBlock Text="关于" Style="{StaticResource H2}" />
-          <TextBlock Style="{StaticResource Label}" Margin="0,8,0,0" TextWrapping="Wrap"
-                     Text="ThermalTuner · 决策树驱动的 CPU 热约束调优。实测标定与手动微调值保存在本机，开机后重放到寄存器；固件默认值不可持久化，退出恢复原值。" />
-          <TextBlock Style="{StaticResource Mono}" FontSize="11" Margin="0,10,0,0"
-                     Foreground="{StaticResource TextTertiary}" Text="v0.5.1 · net8.0-windows · WPF" />
+          <TextBlock Style="{StaticResource Hint}" Margin="0,8,0,0"
+                     Text="决策树驱动的 CPU 热约束调优。标定与微调值保存在本机，固件默认值不可持久化。" />
+          <TextBlock Style="{StaticResource Mono}" FontSize="11" Margin="0,8,0,0"
+                     Foreground="{StaticResource TextTertiary}">
+            <Run Text="{Binding VersionText, Mode=OneWay}" /><Run Text=" · net8.0-windows · WPF" />
+          </TextBlock>
         </StackPanel>
       </Border>
     </StackPanel>

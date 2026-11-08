@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -11,7 +11,7 @@
     <RootNamespace>ThermalTuner.App</RootNamespace>
     <AssemblyName>ThermalTuner.App</AssemblyName>
     <!-- 统一版本口径：与 README、侧栏版本号一致 -->
-    <Version>0.5.1</Version>
+    <Version>0.5.3</Version>
     <!-- 可执行文件的运行图标（任务栏 / 资源管理器），同时作为窗口与托盘图标来源 -->
     <ApplicationIcon>Assets\ThermalTuner.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -36,9 +36,8 @@
 
   <ItemGroup>
     <!-- LHM 仅用于**传感器采样**（温度 / 功耗 / 频率 / GPU）。
-         MSR 读写不经过 LHM：v0.5.1 起改走 PawnIO 直连 IOCTL（见 Services/Msr/PawnIoDevice.cs）。
-         版本必须 0.9.6+：0.9.4 的传感器侧依赖 WinRing0，而 WinRing0 已被 AV 按易受攻击驱动
-         名单删除，产品不再保留该依赖。0.9.6 改用 PawnIO 后端，与本项目共用同一驱动。 -->
+         MSR 读写不经过 LHM：走 PawnIO 直连 IOCTL（见 Services/Msr/PawnIoDevice.cs）。
+         版本必须 0.9.6+：后端为 PawnIO，与本项目共用同一驱动；升级前需跑写入自检验证写链路。 -->
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-# ThermalTuner 仓库结构与模块设计
+﻿# ThermalTuner 仓库结构与模块设计
 
 > 面向研发与审阅者：说明**每一级目录放什么**、**源码模块怎么分层**、**数据怎么流动**、
 > 以及哪些是必须遵守的设计约定。产品口径与快速上手请看 [`README.md`](../README.md)。
@@ -10,7 +10,7 @@
 | 路径 | 用途 | 是否入库 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `README.md` | **产品主入口**：能力边界、实测结论、快速开始、自检命令、排障 | ✅ | 单一产品口径 |
-| `README_REFACTOR.md` | 决策树重构架构深潜：四象限参数、五节点、凭证字段、平台推导 | ✅ | 架构历史与细节 |
+| `README_REFACTOR.md` | 架构说明：四象限参数、五节点、轨迹整形与下发调度、凭证字段、自检命令 | ✅ | 当前实现口径（v0.5.2 校订） |
 | `ThermalTuner.sln` | 经典格式解决方案（5 个项目） | ✅ | SDK 8.0.427 不能构建 `.slnx`，故保留 `.sln` |
 | `src/` | 产品源码，4 个 .NET 项目 | ✅ | 见第 2 节 |
 | `tests/` | 独立测试入口（零外部测试框架） | ✅ | 见第 2 节 |
@@ -58,6 +58,10 @@ ThermalTuner.Core.Tests (控制台, net8.0)         ──►  ThermalTuner.Core
 | `Stress/` | `StressWorker` 六类负载内核（整数/标量浮点/AVX2-FMA/内存带宽/混合/脉冲）与 `StressScenarioCatalog` 场景阶梯、`Pl1Ladder` |
 | `ThermalCalibration.cs` / `ThermalResistance.cs` | 两段式稳态标定、热阻 `R_th = ΔT/ΔP`、`PredictSteady` / `MaxPowerForCeiling` |
 | `AutoCpuController.cs` | 决策树入口与自动接管闸门（双开关、冷却、失败熔断） |
+| `Taxonomy/WriteScheduler.cs` | **0x610 下发唯一入口**：1W 台阶、升档迟滞、升档冷却、熔断、高温只降不升 |
+| `Taxonomy/TrajectoryShaper.cs` | 决策输出轨迹整形：去突刺、低通、温度带滞回、升档带门控（降档直通） |
+| `Taxonomy/ThermalEventRecorder.cs` | 真实触顶热事件观测器（研究埋点，纯计算不落盘） |
+| `Taxonomy/FanSource.cs` | 可插拔风扇数据源抽象（transport + 量纲 + resolver + 写闸门，全只读） |
 | `ParamConstraints.cs` | 参数物理约束与分级违规（Block / Warn / Info） |
 
 **分层原则**：Core 里所有编解码都是**可单测的纯函数**；真正的寄存器读写下沉到 App 的 `MsrGuard`。
@@ -71,19 +75,22 @@ ThermalTuner.Core.Tests (控制台, net8.0)         ──►  ThermalTuner.Core
 | `App.xaml` / `App.xaml.cs` | 启动入口：命令行自检分支（`--smoke` / `--msr-probe` / `--env-check` / `--scenario-sweep` …）、单实例互斥、提权模式标记、正常 UI 启动 |
 | `MainWindow.xaml(.cs)` | 侧栏 + 五页容器、托盘生命周期、退出时恢复原值 |
 | `Services/SessionState.cs` | **会话状态中枢**：1 Hz 采样、决策树调用、标定状态机、三层参数模型、自动接管闸门、告警与事件 |
-| `Services/HardwareTelemetry.cs` | LHM 传感器采集（温度/频率/负载/包功耗），独立于 MSR 通道 |
+| `Services/HardwareTelemetry.cs` | LHM 0.9.6 传感器采集（温度/频率/负载/包功耗/GPU/风扇），独立于 MSR 通道 |
 | `Services/RaplPowerMeter.cs` | `0x611` 能量计数器 → 真实包功耗 |
-| `Services/Msr/MsrChannel.cs` | **MSR 访问唯一门面**（LHM 0.9.4 / WinRing0），上层零处直接引用驱动 |
-| `Services/Msr/MsrGuard.cs` | 写入护栏：启动备份、读-改-写、回读校验、失败回滚、脏标记、审计日志；`0x610 / 0x774 / 0x1AD / 0x150` |
-| `Services/Msr/PawnIoNative.cs` `LhmPawnModule.cs` | 历史 PawnIO 适配死代码，**已由 csproj `<Compile Remove>` 排除**，保留仅作参考 |
+| `Services/Msr/MsrChannel.cs` | **MSR 访问唯一门面**（v0.5.1：PawnIO / IntelMSR 模块，直连 IOCTL），上层零处直接引用驱动 |
+| `Services/Msr/MsrGuard.cs` | 写入护栏：启动备份、读-改-写、回读校验、失败回滚、脏标记、审计日志；当前仅 `0x610` 在模块写白名单内 |
+| `Services/Msr/PawnIoDevice.cs` `PawnIoMsrBackend.cs` `PawnIoInstaller.cs` | PawnIO IOCTL 通道 / 模块加载与白名单自检 / 自管驱动安装 |
+| `Services/FanSources.cs` + `Core/Taxonomy/FanSource.cs` | 可插拔风扇数据源抽象（LHM / EC / NBFC / OEM ACPI）与优先级解析；全通道只读 |
 | `Services/SettingsStore.cs` | `settings.json` 持久化 + **旧版数据目录迁移** |
-| `Services/EnvironmentCheck.cs` | 首次安装启动的能力自检、`capability.json`、依赖处置建议、UI 禁用清单 |
+| `Services/EnvironmentCheck.cs` | 能力自检、`capability.json`（带指纹缓存与有效期）、依赖处置建议、UI 禁用清单 |
+| `Services/StartupCoordinator.cs` | 启动编排：缓存命中跳过检测、冷启动同步检测、闸门三分流（就绪 / 仅观测 / 未就绪）、启动耗时记录 |
+| `Services/ProductTerms.cs` | **产品语言词表**：界面术语的唯一来源；工程词（寄存器 / 驱动名）只允许出现在「技术详情」 |
 | `Services/StartupRegistration.cs` | HKCU Run 自启注册与更名后的旧项清理 |
 | `Services/TrayService.cs` | 托盘常驻、右键菜单、产品图标 |
 | `Services/StressLoad.cs` | 压测负载薄封装（内核实现在 Core/Stress） |
-| `Views/` | 五页（v0.5.0）：概览（含全部监控指标、统一时序图、全局模式状态条与压测/明细/导出）/ 智能微调（选中即下发）/ 手工微调（原「高级参数」）/ 诊断与日志（含环境自检与固件基线对照）/ 设置 |
+| `Views/` | 五页：概览（全部监控指标、统一时序图、全局模式状态条、压测/明细/导出）/ 智能微调（选中即下发 + 标定）/ 手工微调（能力感知禁用 + 实读列）/ 诊断与日志（环境、驱动权限、自检报告、三层参数、日志与数据文件一览、传感器清单、三级事件中心）/ 设置。每页顶部有一行随导航切换的操作导引（`MainWindow._meta`） |
 | `Services/SessionState.cs` | 模式状态机 + `WriteScheduler` 单入口下发 + 热事件埋点（CSV 落盘）；页面 DataContext 的唯一来源 |
-| `Windows/` | `ConfirmDialog`（含输入确认词的危险操作）、`FirstRunWizard` |
+| `Windows/` | `StartupWindow`（启动初始化页 + 就绪闸门 + 修复动作）、`ConfirmDialog`（含输入确认词的危险操作）、`FirstRunWizard` |
 | `Themes/` `Controls/` `Assets/` | 设计令牌、图表控件、产品 ico |
 | 根目录 `*Probe.cs` / `SmokeTest.cs` | 无界面自检命令：`MsrProbe`、`RaplProbe`、`StressProbe`、`CalibrationSweepProbe`、`ScenarioSweepProbe`、`TurboStressProbe`、`CalibrationProbe`、`SmokeTest` |
 
@@ -118,7 +125,7 @@ LHM 传感器 / RAPL ──► HardwareTelemetry ──► SessionState(1Hz)
 
 ## 6. 必须遵守的设计约定
 
-1. **LHM 固定 0.9.4**（WinRing0 提供 `Ring0.WriteMsr`）；0.9.6+ / PawnIO 只有 `ioctl_read_msr`，升级会静默丢失写入能力。
+1. **MSR 后端固定 PawnIO / IntelMSR 模块**（v0.5.1 起唯一后端，直连 IOCTL）；LHM 0.9.6 只做传感器采样。随包 `IntelMSR.bin` 来自 PawnIO.Modules 0.2.11，含 `ioctl_write_msr` 且写白名单覆盖 `0x610`；**LHM 0.9.6 内嵌的同名模块才是只读版**，两者不可混用。更换模块后必须跑 `--write-test`。WinRing0 已废弃，不保留降级路径。
 2. **固件默认值不可持久化修改**；软件不运行 / 未授权时 CPU 按固件默认散热逻辑运转。
 3. **智能标定与应用标定不碰危险参数**（电压偏移、睿频倍率、温度墙）；个性化项只能由用户在「手工微调」页手动微调。
 4. **所有写入必须过 `MsrGuard`**：备份 → 回读校验 → 失败自动回滚 → 审计，不允许上层直接写 MSR。
@@ -126,9 +133,26 @@ LHM 传感器 / RAPL ──► HardwareTelemetry ──► SessionState(1Hz)
 6. **参数项能否编辑由首次环境自检 `capability.json` 决定**，不靠机型硬编码猜测。
 7. **v0.5.0 模式与下发**：`Settings.TuningMode` 是模式唯一真值源（旧版 `_manualLock` 已移除）；所有 `0x610` 下发（选中事件 / 决策树每拍 / 手工保存 / 开机重放）必须经 `WriteScheduler` 单一入口：1W 台阶、升档 3 拍迟滞、升档冷却默认 20s 可调、高温降档立即、每分钟 ≤4 次熔断。PROCHOT / ≥ 安全上限的「只降不升」不可由二次确认解除。
 8. **自适应冷却公式未实现**：`thermal-events.csv` 只是研究埋点；本机零个真实触顶样本，不得把未验证系数写进策略。
-7. 机型瓦数一律来自 `0x610` **实读**，不写死常量；压测用场景库而非单一循环。
+9. **机型瓦数一律来自 `0x610` 实读**，不写死常量；压测用场景库而非单一循环。
+10. **日志按用途分文件、事件按等级分级**（见 §6b）；数据目录里的每份文件只管一件事，互不覆盖。
 
 ---
+
+## 6b. 日志与数据文件归类（可观测性约定）
+
+| 文件 | 归类 | 内容 | 用于观测什么 |
+| :--- | :--- | :--- | :--- |
+| `settings.json` | 配置 | 采样间隔、模式、双开关、标定推荐、手工微调 | 当前意图与持久化状态 |
+| `startup-log.txt` | 观测 | 每次启动各阶段耗时（入口 / 启动页 / 检测缓存命中 / 主界面显示），保留最近 40 行 | 「启动为什么慢」的第一手证据 |
+| `capability.json` | 能力 | 环境自检快照（带「版本+机器+权限」指纹） | 哪些参数可编辑、启动能否直接进入 |
+| `backup/msr-*-startup.json` | 基线 | L1 固件基线快照（首次运行，永不覆盖） | 出厂默认值与恢复基准 |
+| `logs/msr-audit.log` | 审计 | 每次写入 / 恢复：时间、寄存器、前后值、HRESULT | 写入是否真的生效、是否回滚 |
+| `thermal-events.csv` | 研究 | 真实触顶事件（峰值/超温/降档/回落速率/二次触顶） | 温度触顶行为，供后续策略研究 |
+| 事件中心（内存） | 运行 | 本会话最近事件，信息 / 注意 / 故障三级 | 状态变化与失败即时反馈 |
+| 采样 CSV（导出） | 观测 | 时间、温度、负载、功耗、决策 PL1、风扇及原始值、命中规则 | 离线复现决策序列 |
+
+原则：**每份文件只承担一个职责**；研究埋点（thermal-events.csv）绝不参与控制策略；
+审计与事件都带明确等级/结果字段，避免「只有一行文本说不清成败」。
 
 ## 7. 构建、发布与自检入口
 

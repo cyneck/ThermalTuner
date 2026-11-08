@@ -1,4 +1,4 @@
-<Window x:Class="ThermalTuner.App.Windows.FirstRunWizard"
+﻿<Window x:Class="ThermalTuner.App.Windows.FirstRunWizard"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ThermalTuner · 首次设置" Width="760" Height="580"
@@ -80,7 +80,7 @@
         <StackPanel>
           <TextBlock Text="权限与驱动" Style="{StaticResource H2}" />
           <TextBlock Style="{StaticResource Label}" Margin="0,4,0,14" TextWrapping="Wrap"
-                     Text="读取 CPU 封装温度需要签名驱动 PawnIO + 管理员权限。缺失不会崩溃，只会降级为负载监控。" />
+                     Text="读取 CPU 温度需要调优组件与管理员权限。缺失不会崩溃，只会降级为负载监控。" />
 
           <Grid>
             <Grid.ColumnDefinitions>
@@ -110,7 +110,7 @@
           <Border x:Name="DriverHint" Background="{StaticResource WarnSoft}" BorderBrush="{StaticResource Warn}"
                   BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="未检测到温度传感器：请安装 PawnIO（github.com/namazso/PawnIO/releases），然后关闭本程序并以管理员身份重新运行。也可先跳过，仅使用负载监控。" />
+                       Text="未检测到温度传感器：请在「诊断与日志」页安装调优组件，然后关闭本程序并以管理员身份重新运行。也可先跳过，仅使用负载监控。" />
           </Border>
         </StackPanel>
       </Border>
@@ -175,7 +175,7 @@
 
           <Border Background="{StaticResource BgSubtle}" CornerRadius="6" Padding="10,8" Margin="0,12,0,0">
             <TextBlock Style="{StaticResource Label}" FontSize="11" TextWrapping="Wrap"
-                       Text="自动接管只在你确认后生效；随时可在设置页关闭。写入硬件还需管理员权限与设置页「允许写入 MSR」授权。" />
+                       Text="自动接管只在你确认后生效，随时可在设置页关闭。写入硬件还需要管理员权限与设置页的写入授权。" />
           </Border>
         </StackPanel>
       </Border>

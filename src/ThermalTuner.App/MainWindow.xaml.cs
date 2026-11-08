@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using ThermalTuner.App.Services;
@@ -17,13 +17,18 @@ public partial class MainWindow : Window
 
     /// <summary>离屏截图模式：跳过托盘、首次向导与关闭时的寄存器恢复/配置落盘。</summary>
     public bool CaptureMode { get; set; }
-    private readonly Dictionary<string, (string Title, string Subtitle)> _meta = new()
+    private readonly Dictionary<string, (string Title, string Subtitle, string Guide)> _meta = new()
     {
-        ["overview"] = ("概览", "全部监控指标、统一时序图、决策凭证与采样明细"),
-        ["tuning"] = ("智能微调", "选中档位即下发；阶梯调度器按温度低频动态微调"),
-        ["params"] = ("手工微调", "解锁编辑全部参数，保存并下发后进入手工模式"),
-        ["diagnostics"] = ("诊断与日志", "环境体检、固件基线对照、自检报告与恢复机制"),
-        ["settings"] = ("设置", "调优模式、升档冷却、自启、采样与写入授权")
+        ["overview"] = ("概览", "温度、功耗、负载与每次决策的依据",
+            "只读观测：7 项指标 + 统一时序图 + 决策依据。要改变功耗请到「智能微调」选档，或到「手工微调」改参数；本页不改任何硬件设置。"),
+        ["tuning"] = ("智能微调", "选一个档位，其余交给决策树",
+            "用法：① 选档位（会重算一次并按权限改写功耗上限）→ ② 需要更凉或更静就调低天花板 → ③ 想量化本机散热就做一次检测。没有管理员权限时只演算。"),
+        ["params"] = ("手工微调", "逐项调整功耗与性能参数，保存后进入手工模式",
+            "用法：① 解锁编辑 → ② 改数值（边改边校验，越界直接拦截）→ ③ 保存并下发（二次确认 + 备份原值 + 回读校验）。保存后进入手工模式，智能档位只演算。"),
+        ["diagnostics"] = ("诊断与日志", "环境体检、自检报告与恢复机制",
+            "观测与修复专用：左侧看环境、权限、检测报告与参数对照，右侧看传感器原始读数与事件记录。本页不改任何参数；日志与数据文件按用途列在下方。"),
+        ["settings"] = ("设置", "运行、启动、写入授权与数据",
+            "改动即时生效并保存到本机。「允许把设置写入硬件」决定是否真的改写硬件参数，「开机重放」决定重启后是否写回已保存的微调值；两项都关闭时本工具只观测。")
     };
 
     public MainWindow() : this(new SessionState())
@@ -107,7 +112,7 @@ public partial class MainWindow : Window
                     (double.IsNaN(plan.TargetPl1W)
                         ? "目标 PL1 将在首拍采样后重算。"
                         : $"目标 PL1 {plan.TargetPl1W:F1}W，Δ {plan.DeltaW:+0;-0;0}W。"),
-                    new[] { plan.ConfirmReason, "只写 0x610 的 PL1/PL2；回读校验，失败回滚并留审计" },
+                    new[] { plan.ConfirmReason, "只改写持续 / 短时功耗上限；写入后回读校验，失败回滚并留审计" },
                     "确认并下发");
 
                 if (!proceed)
@@ -120,7 +125,7 @@ public partial class MainWindow : Window
                 _tray?.UpdateProfile(profile);
                 _session.AddAlert(outcome.Ok ? "info" : "warn", "托盘切换档位",
                     outcome.Ok
-                        ? $"已下发 {outcome.StepPl1W}W 到 0x610 并回读校验（{plan.ProfileLabel}）。"
+                        ? $"已写入 {outcome.StepPl1W}W 并回读一致（{plan.ProfileLabel}）。"
                         : $"档位意图已更新为「{plan.ProfileLabel}」；硬件下发：{outcome.Message}");
             };
             _tray.ExitRequested += ExitApplication;
@@ -219,6 +224,7 @@ public partial class MainWindow : Window
         {
             PageTitle.Text = meta.Title;
             PageSub.Text = meta.Subtitle;
+            PageGuide.Text = meta.Guide;
         }
     }
 

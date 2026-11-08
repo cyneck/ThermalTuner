@@ -29,7 +29,11 @@ public partial class OverviewPage : UserControl
         _session = s;
         s.Ticked += OnTicked;
         UpdateCount(s);
+        SyncRunControls();
     }
+
+    /// <summary>负载场景只在真正施加压测时可操作，避免「选了场景却没生效」的误解。</summary>
+    private void SyncRunControls() => KernelBox.IsEnabled = StressBox.IsChecked == true;
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
@@ -59,10 +63,15 @@ public partial class OverviewPage : UserControl
 
     private void Stress_Checked(object sender, RoutedEventArgs e)
     {
+        SyncRunControls();
         if (Session is { } s) s.SetStress(true, s.Environment.LogicalCores, CurrentKernel);
     }
 
-    private void Stress_Unchecked(object sender, RoutedEventArgs e) => Session?.SetStress(false);
+    private void Stress_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (Session is { } s) s.SetStress(false);
+        SyncRunControls();
+    }
 
     private void Kernel_Changed(object sender, SelectionChangedEventArgs e)
     {
