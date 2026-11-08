@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
 using System.Management;
 using System.Text;
@@ -23,7 +23,18 @@ namespace ThermalTuner.App.Services;
 /// </summary>
 public sealed class CapabilitySnapshot
 {
+    /// <summary>快照结构版本。字段变化时递增，旧快照自动作废并重跑一次。</summary>
+    public const int CurrentSchema = 2;
+
+    public int Schema { get; set; } = CurrentSchema;
     public DateTime CheckedAt { get; set; }
+    /// <summary>产生快照的程序版本（只取 主.次）。升级后能力可能变化，需重新确认。</summary>
+    public string AppVersion { get; set; } = string.Empty;
+    /// <summary>机器标识：CPU 型号 + 逻辑核数 + 系统版本，用于判断是否换了机器/换了系统。</summary>
+    public string MachineKey { get; set; } = string.Empty;
+    /// <summary>指纹 = 版本 + 机器 + 权限。任一变化即视为快照失效。</summary>
+    public string Fingerprint { get; set; } = string.Empty;
+
     public bool Elevated { get; set; }
     public bool WriteProbeDone { get; set; }
     public string LhmVersion { get; set; } = string.Empty;
@@ -32,9 +43,17 @@ public sealed class CapabilitySnapshot
     public string MsrDetail { get; set; } = string.Empty;
     public bool Hvci { get; set; }
     public bool Virtualized { get; set; }
+    /// <summary>本次检测时调优通道是否具备写入能力（只表示通道，不含授权开关）。</summary>
+    public bool ChannelWritable { get; set; }
     public string CpuName { get; set; } = string.Empty;
     public string CpuCapabilityNote { get; set; } = string.Empty;
     public string TelemetryNote { get; set; } = string.Empty;
+    /// <summary>风扇数据源能力（运行时探测）。仅探测 EC / NBFC 只读链，不含 LHM 传感器通道。</summary>
+    public string FanTransport { get; set; } = string.Empty;
+    public string FanMeasure { get; set; } = string.Empty;
+    public bool FanReadable { get; set; }
+    public bool FanWritable { get; set; }
+    public string FanDetail { get; set; } = string.Empty;
     public Dictionary<string, bool> Readable { get; set; } = new();
     public Dictionary<string, bool> Writable { get; set; } = new();
     public List<string> InstallHints { get; set; } = new();
@@ -74,6 +93,70 @@ public static class EnvironmentSelfCheck
 
     public static string CapabilityPath => FilePath;
 
+    /// <summary>快照有效期：超过这个天数即使指纹不变，也在后台静默复核一次（不阻塞启动）。</summary>
+    public static readonly TimeSpan CacheSoftLimit = TimeSpan.FromDays(30);
+
+    /// <summary>程序版本（主.次），用于判断升级后能力是否可能变化。</summary>
+    public static string CurrentAppVersion
+    {
+        get
+        {
+            var v = typeof(EnvironmentSelfCheck).Assembly.GetName().Version;
+            return v is null ? "0.0" : $"{v.Major}.{v.Minor}";
+        }
+    }
+
+    /// <summary>机器指纹字段：CPU 型号 + 逻辑核数 + 系统版本。全部是无需驱动、无特权的读取。</summary>
+    public static string CurrentMachineKey
+    {
+        get
+        {
+            string cpu;
+            try { cpu = HardwareProbe.Probe().BrandString; }
+            catch { cpu = "unknown"; }
+            return $"{cpu}|{System.Environment.ProcessorCount}|{System.Environment.OSVersion.Version}";
+        }
+    }
+
+    public static string ComputeFingerprint(string appVersion, string machineKey, bool elevated) =>
+        $"{appVersion}|{machineKey}|{(elevated ? "admin" : "user")}";
+
+    /// <summary>当前进程对应的指纹（与 <see cref="Run"/> 写入的保持一致）。</summary>
+    public static string CurrentFingerprint() =>
+        ComputeFingerprint(CurrentAppVersion, CurrentMachineKey, IsElevated());
+
+    /// <summary>
+    /// 判断一份快照能否直接用于本次启动。宁可多跑一次检查，也不要把过期能力当成现状：
+    /// 版本升级、换机器、换系统、提权/降权都可能改变可读可写清单。
+    /// </summary>
+    public static bool IsCacheValid(CapabilitySnapshot? snap, out string reason)
+    {
+        reason = string.Empty;
+        if (snap is null) { reason = "尚未检测过"; return false; }
+        if (snap.Schema != CapabilitySnapshot.CurrentSchema) { reason = "检测结果的格式已更新"; return false; }
+        if (!string.Equals(snap.Fingerprint, CurrentFingerprint(), StringComparison.Ordinal))
+        {
+            reason = snap.Elevated != IsElevated()
+                ? "运行权限与上次检测不同"
+                : "程序版本或硬件环境发生变化";
+            return false;
+        }
+        if (snap.CheckedAt == default) { reason = "检测时间缺失"; return false; }
+        if (!snap.Readable.ContainsKey("Temp") || !snap.Readable.ContainsKey("PL1"))
+        {
+            reason = "检测结果不含关键参数";
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>读取并校验磁盘上的快照；失败时给出「为什么要重新检测」的产品化原因。</summary>
+    public static bool TryLoadValid(out CapabilitySnapshot? snap, out string reason)
+    {
+        snap = Load();
+        return IsCacheValid(snap, out reason);
+    }
+
     public static CapabilitySnapshot? Load()
     {
         try
@@ -104,10 +187,14 @@ public static class EnvironmentSelfCheck
     {
         var snap = new CapabilitySnapshot
         {
+            Schema = CapabilitySnapshot.CurrentSchema,
             CheckedAt = DateTime.Now,
+            AppVersion = CurrentAppVersion,
+            MachineKey = CurrentMachineKey,
             Elevated = IsElevated(),
             TelemetryNote = telemetryNote
         };
+        snap.Fingerprint = ComputeFingerprint(snap.AppVersion, snap.MachineKey, snap.Elevated);
 
         var env = HardwareProbe.Probe();
         snap.CpuName = env.BrandString;
@@ -126,9 +213,8 @@ public static class EnvironmentSelfCheck
         if (v is null || v.Major != 0 || v.Minor != 9 || v.Build < 6)
         {
             snap.InstallHints.Add(
-                $"LibreHardwareMonitorLib 版本为 {snap.LhmVersion}，本项目要求 0.9.6 及以上。" +
-                "0.9.4 的传感器侧依赖 WinRing0，而该驱动会被安全软件按易受攻击驱动名单删除；" +
-                "请升级 NuGet 包 LibreHardwareMonitorLib 到 0.9.6（PawnIO 后端）。");
+                $"LibreHardwareMonitorLib 版本为 {snap.LhmVersion}，本项目要求 0.9.6 及以上；" +
+                "请把 NuGet 包升级到 0.9.6（PawnIO 后端），以保证传感器与驱动链路一致。");
         }
         if (!hasWriteMsr)
         {
@@ -143,6 +229,7 @@ public static class EnvironmentSelfCheck
         using var channel = MsrChannel.Open();
         snap.MsrStatus = $"{channel.Status} / {MsrChannel.StatusText(channel.Status)}";
         snap.MsrDetail = channel.Detail;
+        snap.ChannelWritable = channel.CanWrite;
 
         switch (channel.Status)
         {
@@ -208,6 +295,27 @@ public static class EnvironmentSelfCheck
 
         // 去重
         snap.DisabledItems = snap.DisabledItems.Distinct().ToList();
+
+        // ---- 3.5 风扇数据源能力（只读探测，绝不写 EC） ----
+        // 这里不持有 HardwareTelemetry 实例，故只探测 EC / NBFC 链；报告会如实标注范围，
+        // 避免把「本机无 LHM 传感器」误写成「所有机型都没有风扇数据源」。
+        try
+        {
+            var fan = FanSources.Read(null);
+            snap.FanTransport = fan.Capability.Transport.ToString();
+            snap.FanMeasure = fan.Capability.Measure.ToString();
+            snap.FanReadable = fan.HasValue;
+            snap.FanWritable = fan.Capability.CanWrite;
+            snap.FanDetail = fan.HasValue
+                ? $"{fan.Capability.Name}｜{fan.Reason}"
+                : fan.Reason;
+        }
+        catch (Exception ex)
+        {
+            snap.FanTransport = "Unavailable";
+            snap.FanMeasure = "None";
+            snap.FanDetail = $"风扇能力探测异常：{ex.GetType().Name}";
+        }
 
         // ---- 4. 写能力：通道状态给初值，实测仅在授权且管理员时补 ----
         bool channelWritable = channel.CanWrite;
@@ -281,6 +389,13 @@ public static class EnvironmentSelfCheck
         if (s.MsrStatus.Contains("NoAdmin", StringComparison.OrdinalIgnoreCase) && s.CanRead("PL1"))
             sb.AppendLine("说明           : 当前进程非管理员，只读探测可能仍可用；这是「能看不能写」状态，" +
                           "真实写入需点界面「以管理员重启」，否则请求会走演练或被驱动拒绝。");
+        sb.AppendLine();
+        sb.AppendLine("== 1.1 风扇数据源（EC / NBFC 只读链探测，不含 LHM 传感器通道） ==");
+        sb.AppendLine($"通道 / 量纲    : {s.FanTransport} / {s.FanMeasure}");
+        sb.AppendLine($"可读 / 可写    : {(s.FanReadable ? "是" : "否（UI 显示 N/A）")} / {(s.FanWritable ? "是" : "否（全通道只读）")}");
+        sb.AppendLine($"详情           : {s.FanDetail}");
+        sb.AppendLine("配置优先级     : LhmSensor → EcPortIo → NbfcService → Unavailable（OemAcpi 预留，未接入）");
+        sb.AppendLine("口径           : 档位百分比 ≠ RPM；语义未确认的 EC 原始字节不得换算成转速展示");
         sb.AppendLine();
         sb.AppendLine("== 2. 参数项可获取性 / 可写性 ==");
         foreach (var key in new[] { "PL1", "PL2", "Tau", "EPP", "MinPerf", "MaxPerf",

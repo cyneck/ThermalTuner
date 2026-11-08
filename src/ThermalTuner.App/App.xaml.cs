@@ -14,6 +14,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Services.StartupCoordinator.MarkEntry();
 
         // PawnIO 设备安装辅助服务（由 SCM 以 LocalSystem 启动，创建 Root 设备节点后退出）。
         // 必须最先判断：服务会话里不能初始化 WPF 主窗口。
@@ -273,10 +274,14 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        // 更名过渡：清理指向旧版 exe 的开机自启项（仅该情况才删，不误伤同名项）
-        StartupRegistration.CleanupLegacy();
-
-        new MainWindow().Show();
+        // 更名过渡：清理指向旧版 exe 的开机自启项（仅该情况才删，不误伤同名项）。
+        // 放在窗口显示之后：注册表读写不该挡在「用户看到界面」前面。
+        // 启动先给初始化页：它只做「读配置 + 校验能力快照」，耗时部分（传感器枚举）转后台，
+        // 避免主窗口在构造时被同步等待，出现「点了没反应」的几秒钟。
+        new Windows.StartupWindow().Show();
+        // 注册表清理放到空闲优先级：先让窗口画出来，再做这些后台杂事
+        Dispatcher.BeginInvoke(new Action(StartupRegistration.CleanupLegacy),
+            System.Windows.Threading.DispatcherPriority.Background);
     }
 
     protected override void OnExit(ExitEventArgs e)

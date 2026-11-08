@@ -1,6 +1,7 @@
 using System.Management;
 using System.Runtime.InteropServices;
 using LibreHardwareMonitor.Hardware;
+using ThermalTuner.Core.Taxonomy;
 
 namespace ThermalTuner.App.Services;
 
@@ -224,28 +225,15 @@ public sealed class HardwareTelemetry : IDisposable
         try
         {
             var g = ReadGpu();
-            var f = ReadFan();
-            double rpm = f.Rpm, pct = f.Pct;
-            string fanSource = "LHM 实测 · 只读";
-            double fanRaw = double.NaN;
-            int extReads = 0;
-            bool extStagnant = false;
-
-            // LHM 不支持部分笔记本主板的 EC 传感器（本机 HP 838F 即如此）。
-            // 此时用 NBFC / ec-probe 只读采集真实风扇运行百分比，绝不拿决策树演算值填充。
-            if (double.IsNaN(rpm) && double.IsNaN(pct))
-            {
-                var ext = EcFanReader.ReadRuntime();
-                if (!double.IsNaN(ext.Percent))
-                {
-                    pct = ext.Percent;
-                    fanSource = ext.Source;
-                    fanRaw = ext.RawValue;
-                    extReads = ext.StagnantReads;
-                    extStagnant = ext.Stagnant;
-                }
-                else fanSource = string.Empty;
-            }
+            // 风扇数据源优先级统一由 Core 的 FanSourceResolver 编排：
+            //   LHM 传感器 → EC 端口直读（内部再回退 NBFC）→ Unavailable。
+            // 本机 HP 838F 无 Fan/Control 传感器时，绝不拿决策树演算值冒充实测。
+            var fan = FanSources.Read(ReadFan);
+            double rpm = fan.HasValue && fan.Capability.IsRpm ? fan.Value : double.NaN;
+            double pct = fan.HasValue && !fan.Capability.IsRpm &&
+                         fan.Capability.Measure != FanMeasureKind.RawByte
+                ? fan.Value : double.NaN;
+            string fanSource = fan.HasValue ? fan.Capability.Name : string.Empty;
 
             return s with
             {
@@ -260,9 +248,9 @@ public sealed class HardwareTelemetry : IDisposable
                 // FanPercentCodec 已钳到 0~100；这里再过一道，保证与 CPU/GPU 同一口径。
                 FanControlPercent = Pct(pct),
                 FanSource = fanSource,
-                FanRawValue = fanRaw,
-                FanStagnantReads = extReads,
-                FanStagnant = extStagnant
+                FanRawValue = fan.RawValue,
+                FanStagnantReads = fan.StagnantReads,
+                FanStagnant = fan.Stagnant
             };
         }
         catch
@@ -323,8 +311,8 @@ public sealed class HardwareTelemetry : IDisposable
     /// <summary>
     /// 风扇实测：SensorType.Fan = RPM，SensorType.Control = 控制百分比。
     /// 部分笔记本主板不被 LHM 支持（本机 HP 838F 即如此），此时返回 NaN，
-    /// 由 WithExtras 回退到 NBFC / ec-probe 的只读 EC 采集；全不可读时 UI 才显示 N/A。
-    /// 本类只读，从不写风扇 / EC / PWM。
+    /// 由 FanSourceResolver 按「LHM → EC 直读 → NBFC → Unavailable」逐级降级；
+    /// 全不可读时 UI 显示 N/A。本类只读，从不写风扇 / EC / PWM。
     /// </summary>
     private (double Rpm, double Pct) ReadFan()
     {

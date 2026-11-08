@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -16,8 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 与主程序保持一致：必须用 0.9.4（WinRing0，Ring0.ReadMsr/WriteMsr 可读写 MSR）。
-         0.9.6 起后端换 PawnIO，随包 IntelMSR 模块只有 ioctl_read_msr（只读），禁止升级。 -->
+    <!-- 与主程序保持一致：0.9.6+（PawnIO 后端）。Monitor 只读遥测，不涉及 MSR 写入。 -->
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>

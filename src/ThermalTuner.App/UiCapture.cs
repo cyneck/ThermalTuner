@@ -23,6 +23,9 @@ internal static class UiCapture
 {
     public static int Run(string outPath, string pageKey, int height = 840)
     {
+        if (string.Equals(pageKey, "startup", StringComparison.OrdinalIgnoreCase))
+            return CaptureStartup(outPath);
+
         SessionState? session = null;
         MainWindow? window = null;
 
@@ -111,6 +114,70 @@ internal static class UiCapture
         {
             window?.Hide();
             session?.Dispose();
+        }
+    }
+
+    /// <summary>单独截启动初始化页：不跑检测、不写盘，只画「已就绪」状态。</summary>
+    private static int CaptureStartup(string outPath)
+    {
+        Windows.StartupWindow? window = null;
+        try
+        {
+            string full = Path.GetFullPath(outPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+
+            window = new Windows.StartupWindow
+            {
+                PreviewMode = true,
+                ShowActivated = false
+            };
+            window.Show();
+            Pump();
+            Pump();
+            window.UpdateLayout();
+            Pump();
+
+            if (window.Content is not FrameworkElement root)
+                throw new InvalidOperationException("启动页根元素不是 FrameworkElement");
+
+            int w = Math.Max(1, (int)Math.Ceiling(root.RenderSize.Width));
+            int h = Math.Max(1, (int)Math.Ceiling(root.RenderSize.Height));
+
+            var raw = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            raw.Render(root);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(window.Background, null, new Rect(0, 0, w, h));
+                dc.DrawImage(raw, new Rect(0, 0, w, h));
+            }
+            var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(dv);
+
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bmp));
+            using (var fs = File.Create(full))
+                encoder.Save(fs);
+
+            File.WriteAllText(Path.ChangeExtension(full, ".txt"),
+                $"页面      : startup\n尺寸      : {w}x{h}\nRESULT: PASS",
+                new System.Text.UTF8Encoding(true));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                File.WriteAllText(Path.ChangeExtension(Path.GetFullPath(outPath), ".txt"),
+                    "RESULT: FAIL\n" + ex, new System.Text.UTF8Encoding(true));
+            }
+            catch { /* 落盘失败靠退出码 */ }
+            return 5;
+        }
+        finally
+        {
+            window?.Hide();
+            window?.Close();
         }
     }
 

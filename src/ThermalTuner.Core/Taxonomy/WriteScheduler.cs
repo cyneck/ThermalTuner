@@ -112,7 +112,7 @@ public sealed class WriteScheduler
 
         if (!req.GatesOpen)
             return Decide(WriteVerdict.HardBlocked, step, rampUp, thermalDown, remaining,
-                "写入闸门未全开（管理员 / WinRing0 / 显式授权）；本次只演算");
+                "写入闸门未全开（管理员 / PawnIO 驱动 / 显式授权）；本次只演算");
 
         // 熔断优先于其它判定，且二次确认不可解除。
         if (Tripped || Prune(req.UtcNow).Count >= MaxWritesPerMinute)

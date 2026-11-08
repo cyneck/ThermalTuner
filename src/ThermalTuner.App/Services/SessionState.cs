@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Security.Principal;
@@ -17,7 +17,16 @@ namespace ThermalTuner.App.Services;
 public sealed record DecisionRow(
     string Time, string Rule, string Reason, string Pl1, string Direction, string Limit, string Path);
 
-public sealed record AlertRow(string Time, string Level, string Title, string Detail);
+public sealed record AlertRow(string Time, string Level, string Title, string Detail)
+{
+    /// <summary>事件等级的中文短标签：用于事件中心左侧的彩色标记，避免只有颜色没有文字。</summary>
+    public string LevelText => Level switch
+    {
+        "danger" => "故障",
+        "warn" => "注意",
+        _ => "信息"
+    };
+}
 
 public sealed record SampleRow(
     string Time, string Temp, string Load, string Power, string Pl1, string Rule, string Fan = "--");
@@ -64,7 +73,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private const int LogCap = 100;
 
     private readonly DispatcherTimer _timer = new();
-    private readonly HardwareTelemetry _telemetry = new();
+    /// <summary>
+    /// 遥测在启动后台线程里创建（枚举传感器约 2 秒）。为 null 表示「正在读取」，
+    /// 此时采样直接跳过，界面显示「正在读取」而不是转圈卡住。
+    /// </summary>
+    private HardwareTelemetry? _telemetry;
+    private RaplPowerMeter? _pendingRapl;
     private readonly AutoCpuController _controller;
     private readonly Dictionary<string, DateTime> _alertDebounce = new();
     private MsrGuard? _guard;
@@ -94,10 +108,10 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     // 统一时序图：概览页的唯一监控数据源。各序列索引对齐，不可用写 NaN。
     private readonly MetricSeries _sTemp = new("temp", "温度", "°C", C("#B0453C"), 2.2,
         tooltip: "CPU 封装温度实测；右上角显示温度天花板标注");
-    private readonly MetricSeries _sPl1 = new("pl1", "决策 PL1", "W", C("#185FA5"), 1.4, dashed: true,
+    private readonly MetricSeries _sPl1 = new("pl1", "目标功耗", "W", C("#185FA5"), 1.4, dashed: true,
         tooltip: "决策树演算目标（非寄存器实值）");
     private readonly MetricSeries _sPower = new("power", "包功耗", "W", C("#A9702A"), 2.0,
-        tooltip: "RAPL 包功耗实测");
+        tooltip: "硬件功耗计量实测");
     private readonly MetricSeries _sCpu = new("cpu", "CPU 负载", "%", C("#534AB7"), 1.4,
         fixedMin: 0, fixedMax: 100, format: "F0",
         tooltip: "Windows 系统计时 · CPU 时间占比 0~100%（与任务管理器同口径）");
@@ -145,7 +159,19 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     private readonly List<(double T, double P)> _calHotPts = new();
     private readonly Queue<double> _calRecentTemps = new();
 
-    public SessionState()
+    /// <summary>
+    /// 命令行自检 / 截图 / 冒烟自检用：同步准备好传感器，行为与旧版一致。
+    /// 图形界面走 <see cref="SessionState(HardwareTelemetry?, CapabilitySnapshot?)"/>，由启动编排决定是否异步。
+    /// </summary>
+    public SessionState() : this(new HardwareTelemetry(), null) { }
+
+    /// <summary>
+    /// 由启动编排注入已经打开的遥测实例与已确认的能力快照：
+    /// · telemetry 非空 → 直接复用，不再第二次枚举传感器（首次运行路径）；
+    /// · telemetry 为空 → 后台线程创建，界面先出来（缓存命中路径）；
+    /// · capability 非空 → 直接采用，不再重跑只读自检。
+    /// </summary>
+    public SessionState(HardwareTelemetry? telemetry, CapabilitySnapshot? capability)
     {
         Settings = SettingsStore.Load();
         ResolveTuningMode();
@@ -168,10 +194,74 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
         _timer.Interval = TimeSpan.FromMilliseconds(Settings.IntervalMs);
         _timer.Tick += (_, _) => Tick();
-        // 首次安装启动 + 每次启动都刷新一次只读能力快照：
-        // 提权重启后寄存器可读性会变，禁用清单必须跟着更新，不能沿用旧快照。
-        InitializeEnvironmentCheck();
+
+        if (capability is not null)
+        {
+            ApplyCapability(capability);
+        }
+        else
+        {
+            // 命令行自检 / 截图 / 冒烟自检没有初始化页，走这条兼容路径：
+            // 有可用快照就复用（不再每次启动重跑），否则同步跑一次只读自检。
+            InitializeEnvironmentCheck();
+        }
+
+        if (telemetry is not null) AttachTelemetry(telemetry);
+        else BeginTelemetryWarmup();
     }
+
+    /// <summary>接上遥测实例（可能来自启动编排，也可能来自后台线程）。</summary>
+    private void AttachTelemetry(HardwareTelemetry telemetry)
+    {
+        _telemetry = telemetry;
+        if (_pendingRapl is not null) telemetry.AttachRapl(_pendingRapl);
+        _sensorsReady = true;
+        N(nameof(SensorsReady));
+        N(nameof(SensorsWarming));
+        N(nameof(SensorStatusText));
+        N(nameof(DriverAvailable));
+        N(nameof(SensorCount));
+        N(nameof(StatusText));
+        N(nameof(StatusLevel));
+    }
+
+    private volatile bool _sensorsReady;
+
+    /// <summary>
+    /// 后台准备传感器：Computer.Open 会枚举全部硬件（约 2 秒），不能压在首屏上。
+    /// 失败也让状态变为「已尝试」，避免界面永远停在「正在读取」。
+    /// </summary>
+    private void BeginTelemetryWarmup()
+    {
+        Task.Run(() =>
+        {
+            HardwareTelemetry? created = null;
+            try { created = new HardwareTelemetry(); }
+            catch { /* 失败按不可用处理，界面显示 N/A */ }
+
+            _sensorsReady = true;
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            void Apply()
+            {
+                if (created is not null) AttachTelemetry(created);
+                else
+                {
+                    N(nameof(SensorsReady));
+                    N(nameof(SensorsWarming));
+                    N(nameof(SensorStatusText));
+                    N(nameof(StatusText));
+                    N(nameof(StatusLevel));
+                }
+                AddAlert("info", "监测已就绪", "传感器读取完成，开始按采样间隔刷新指标。");
+            }
+            if (dispatcher is null || dispatcher.CheckAccess()) Apply();
+            else dispatcher.BeginInvoke(Apply);
+        });
+    }
+
+    public bool SensorsReady => _sensorsReady;
+    public bool SensorsWarming => !_sensorsReady;
+    public string SensorStatusText => _sensorsReady ? "传感器就绪" : "正在读取传感器…";
 
     /// <summary>
     /// 存量配置迁移（v0.5.0）：旧版 settings.json 没有 TuningMode 字段。
@@ -206,8 +296,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public CpuEnvironment Environment { get; }
     public HardwareLimits Limits => _controller.Limits;
     public AutoCpuController Controller => _controller;
-    public bool DriverAvailable => _telemetry.DriverAvailable;
-    public int SensorCount => _telemetry.SensorCount;
+    public bool DriverAvailable => _telemetry?.DriverAvailable == true;
+    public int SensorCount => _telemetry?.SensorCount ?? 0;
     public bool IsElevated { get; }
 
     public string CpuName => string.IsNullOrWhiteSpace(Environment.BrandString) ? "未知 CPU" : Environment.BrandString;
@@ -228,12 +318,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     };
     public string DriverText => DriverAvailable ? "驱动就绪" : "驱动不可用";
     public bool RaplAvailable => _rapl?.Available == true;
-    public string RaplText => _rapl?.Detail ?? "未接入（MSR 通道不可用）";
+    public string RaplText => _rapl?.Detail ?? "未接入（调优通道不可用）";
     public string ElevationText => IsElevated ? "管理员" : "普通用户";
     public string CoreText => $"{Environment.PhysicalCores}P / {Environment.LogicalCores}L" +
                               (Environment.IsHybridArchitecture ? " · 混合架构" : string.Empty);
     public string TjMaxText => $"TjMax {Limits.TjMax:F0}°C · 安全上限 {Limits.MaxSafeCeiling:F0}°C";
-    public string PlRangeText => $"PL1 [{Limits.MinPL1:F0}–{Limits.MaxPL1:F0}W] · PL2 [{Limits.MinPL2:F0}–{Limits.MaxPL2:F0}W]";
+    public string PlRangeText => $"持续上限 {Limits.MinPL1:F0}–{Limits.MaxPL1:F0}W · 短时上限 {Limits.MinPL2:F0}–{Limits.MaxPL2:F0}W";
 
     /// <summary>
     /// 本机默认稳态功率：0x610 实读的出厂默认 PL1。
@@ -248,6 +338,11 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         }
     }
     public string DefaultPowerText => double.IsNaN(DefaultPowerW) ? "--" : DefaultPowerW.ToString("F1");
+
+    /// <summary>概览「决策 PL1」卡副标题：值缺失时明确写不可读，不标「实读」。</summary>
+    public string FirmwarePl1Caption => double.IsNaN(DefaultPowerW)
+        ? "出厂值不可读 · 目标为演算值"
+        : $"出厂值 {DefaultPowerW:F1} W · 目标为演算值";
 
     /// <summary>预测稳态用的功耗基准：取实读 PL1（当前生效的默认功率），读不到才退回平台上限。</summary>
     public double PowerBasisW => _firmwarePl1W > 0
@@ -302,8 +397,15 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public bool EppEditable => !double.IsNaN(_fwEpp);
     public string EppHintText => EppEditable
         ? string.Empty
-        : "当前后端（PawnIO IntelMSR）的读白名单不含 0x774：EPP / HWP 微调在本机不可用，" +
-          "PL1 / PL2 / Tau 不受影响。";
+        : "本机读不到「能效偏好」这组参数，相关项已禁用；功耗三项不受影响。";
+
+    // 「合法范围」列：不可读时直接说明不可读，而不是继续展示 [0,255] 让人以为能改。
+    public string EppRangeText => EppEditable ? "[0, 255]" : "本机不可读";
+    public string MinPerfRangeText => _fwHwp is { } h
+        ? $"[0, {h.MaxPerf}] · 且 ≤ Max Perf" : "本机不可读";
+    public string MaxPerfRangeText => _fwHwp is { } h
+        ? $"[{h.MinPerf}, {h.MaxPerf}] · 不做超频" : "本机不可读";
+    public string ActivityWindowRangeText => _fwHwp is null ? "本机不可读" : "[0, 1023]";
 
     // ---- 睿频倍率（MSR 0x1AD）：读得到 ≠ 写得了，两者都要满足才允许编辑 ----
     public bool TurboEditable => _fwTurbo is not null && (_guard?.TurboWritable ?? false);
@@ -312,12 +414,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public int FwTurboMaxRatio => _fwTurbo?.MaxTier ?? 0;
     public string TurboRangeText => _fwTurbo is { } t
         ? $"[{TurboRatioLimit.MinRatio}, {t.MaxTier}] ×100MHz"
-        : "--（0x1AD 不可读）";
+        : "--（本机不可读）";
     public string TurboHintText => _fwTurbo is not { } t
-        ? "当前通道读不到 0x1AD：睿频倍率调节已禁用。"
+        ? "本机读不到睿频倍率，相关调节已禁用。"
         : _guard?.TurboWritable != true
             ? $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz（只读）。" +
-              "当前后端（PawnIO IntelMSR）的写白名单不含 0x1AD，本机不支持改写睿频倍率表；" +
+              "本机不支持改写睿频倍率表；" +
               "功耗与温度控制不受影响。"
             : $"出厂档位 1C {t.OneCoreGhz:F1} / 全核 {t.AllCoreGhz:F1} GHz；" +
               $"允许在 [8, {t.MaxTier}] 内做规格内档位配置（不做超频）。" +
@@ -353,9 +455,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public int AppliedVoltageMv => _appliedVoltageMv;
     public string VoltageHintText => (Settings.VoltageWritable switch
     {
-        true => "本机自检：0x150 可写，电压偏移可用。",
-        false => "本机自检：0x150 写入被 BIOS / 微码拒绝，该个性化项已禁用；重跑 --voltage-probe 可复核。",
-        _ => "本机尚未跑 --voltage-probe：写入可能被拒，失败会自动回零。"
+        true => "本机自检：电压偏移可写，可以使用。",
+        false => "本机自检：本机拒绝电压偏移写入，该项已禁用；可到「诊断与日志」重新检测复核。",
+        _ => "本机尚未验证过：写入可能被拒，失败会自动回零。"
     }) + CpuCaps.VoltageHint +
         "；写入易失寄存器，重启或退出程序即恢复，属相对安全但可能导致不稳定。";
     public string CpuCapabilityText => CpuCaps.MatrixText;
@@ -366,23 +468,23 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     /// L2 智能标定只对 0x610 的 PL1/PL2/Tau 做稳定推荐。
     /// </summary>
     public string HwpHintText =>
-        "通用参数提示：0x774 的 EPP / Min-Max Perf / Activity Window 写入瞬时可成功，但部分平台会被" +
-        "Windows 电源计划或 Intel DTT 周期性覆盖（本机实测 250ms 内即被还原）。" +
-        "请在改完后用 --hwp-probe 复核；标定的稳定推荐只覆盖 0x610 的 PL1 / PL2 / Tau。";
+        "通用参数提示：能效偏好、性能档与响应窗口写入瞬时可成功，但部分平台会被 Windows 电源计划" +
+        "周期性覆盖（本机实测 250ms 内即被还原）。改完可到「诊断与日志」点「重新检测」复核；" +
+        "自动推荐的稳定范围只覆盖功耗三项。";
 
     /// <summary>L2 智能标定推荐（只含通用安全参数，不碰电压/睿频/温度墙）。</summary>
     public string CalibrationLayerText => Settings.Calibration is { } c
-        ? $"标定推荐（L2）：Rth {c.Rth:F2} K/W" +
-          (c.RecommendedPl1W > 0 ? $" · 建议 PL1 {c.RecommendedPl1W:F1}W" : string.Empty) +
-          (c.RecommendedEpp >= 0 ? $" · EPP {c.RecommendedEpp}（0x774 项可能被系统覆盖，仅供参考）" : string.Empty) +
+        ? $"自动推荐值：热阻 {c.Rth:F2} K/W" +
+          (c.RecommendedPl1W > 0 ? $" · 建议持续功耗 {c.RecommendedPl1W:F1}W" : string.Empty) +
+          (c.RecommendedEpp >= 0 ? $" · 能效偏好 {c.RecommendedEpp}（该项可能被系统电源策略覆盖，仅供参考）" : string.Empty) +
           $" · 电压上下文 {c.VoltageContextMv} mV · {c.SavedAt:yyyy-MM-dd HH:mm}" +
-          " · 稳定推荐仅覆盖 0x610 的 PL1/PL2/Tau"
-        : "标定推荐（L2）：尚无，完成一次两段式标定后生成（只产出通用安全参数）";
+          " · 稳定推荐只覆盖功耗三项"
+        : "自动推荐值：尚无，完成一次两段式检测后生成（只给出通用安全参数）";
 
     /// <summary>L3 用户编辑值说明：重新标定只更新 L2，绝不覆盖这里。</summary>
     public string ManualLayerText => Settings.Manual is not null
-        ? "用户编辑值（L3）已保存；重新标定只更新推荐值，不会覆盖你的手动微调。"
-        : "用户编辑值（L3）：尚无；高级参数页应用后才会保存并开机重放。";
+        ? "我的设置已保存；重新检测只更新推荐值，不会覆盖你的手动微调。"
+        : "我的设置：尚无；在「手工微调」页应用后才会保存，并在下次启动时重放。";
 
     // ---- 首次安装启动的环境自检：能力快照决定 UI 哪些参数项不可编辑 ----
 
@@ -405,33 +507,62 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public bool PowerMeasured => _powerFromDriver;
     private (bool Temp, bool Power) TelemetryFlags => (TempReadable, PowerMeasured);
 
+    /// <summary>待判定：等第一拍真实读数出来后再跑只读自检（可读性必须实测，不能用默认值猜）。</summary>
+    private bool _capabilityPending;
+
+    /// <summary>
+    /// 命令行 / 截图 / 冒烟路径的能力快照准备：先用磁盘上的有效快照（按指纹校验），
+    /// 快照失效时挂起，等第一拍真实读数出来后由 <see cref="ResolvePendingCapability"/> 补做。
+    /// </summary>
     private void InitializeEnvironmentCheck()
     {
+        if (EnvironmentSelfCheck.TryLoadValid(out CapabilitySnapshot? cached, out _) && cached is not null)
+        {
+            ApplyCapability(cached);
+            return;
+        }
+        _capabilityPending = true;
+    }
+
+    private void ResolvePendingCapability()
+    {
+        if (!_capabilityPending) return;
+        _capabilityPending = false;
         try
         {
-            bool first = !Settings.EnvironmentChecked && !EnvironmentSelfCheck.IsCommandLineMode;
-            // 只读自检：无 UAC、不写任何 MSR，每次启动刷新，保证提权后禁用清单及时解除
             var f = TelemetryFlags;
-            _capability = EnvironmentSelfCheck.Run(false, TelemetryHint, f.Temp, f.Power);
-            if (first)
-            {
-                Settings.EnvironmentChecked = true;
-                SettingsStore.Save(Settings);
-                int hints = _capability.InstallHints.Count;
-                AddAlert(hints > 0 ? "warn" : "info", "首次环境自检",
-                    (hints > 0
-                        ? $"自检完成，发现 {hints} 条外部依赖 / 环境提示，请到「诊断与日志」或高级参数页查看。"
-                        : "自检完成，外部依赖齐全。") +
-                    $" 能力摘要：{_capability.Summary}；{_capability.DisabledText}");
-            }
-            N(nameof(CapabilitySummaryText)); N(nameof(DependencyHintText));
-            N(nameof(DisabledItemsText)); N(nameof(CapabilityReportText));
-            N(nameof(CapabilityOneLineText));
+            // 只读自检：无 UAC、不写任何寄存器
+            ApplyCapability(EnvironmentSelfCheck.Run(false, TelemetryHint, f.Temp, f.Power));
         }
         catch (Exception ex)
         {
-            AddAlert("warn", "环境自检未完成", ex.Message + "；参数项禁用判断可能不准，可手动重跑 --env-check。");
+            AddAlert("warn", "环境自检未完成", ex.Message + "；参数项禁用判断可能不准，可到「诊断与日志」重新检测。");
         }
+    }
+
+    /// <summary>采用一份能力快照，并补齐通知与首次自检提示。</summary>
+    public void ApplyCapability(CapabilitySnapshot snap)
+    {
+        _capability = snap;
+        _capabilityPending = false;
+
+        bool first = !Settings.EnvironmentChecked && !EnvironmentSelfCheck.IsCommandLineMode;
+        if (first)
+        {
+            Settings.EnvironmentChecked = true;
+            try { SettingsStore.Save(Settings); } catch { /* 落盘失败不影响本次运行 */ }
+            int hints = snap.InstallHints.Count;
+            AddAlert(hints > 0 ? "warn" : "info", "首次环境自检",
+                (hints > 0
+                    ? $"自检完成，发现 {hints} 条外部依赖 / 环境提示，请到「诊断与日志」查看。"
+                    : "自检完成，外部依赖齐全。") +
+                $" 能力摘要：{snap.Summary}；{snap.DisabledText}");
+        }
+
+        N(nameof(Capability));
+        N(nameof(CapabilitySummaryText)); N(nameof(DependencyHintText));
+        N(nameof(DisabledItemsText)); N(nameof(CapabilityReportText));
+        N(nameof(CapabilityOneLineText));
     }
 
     /// <summary>
@@ -445,14 +576,12 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         try
         {
             var f = TelemetryFlags;
-            _capability = EnvironmentSelfCheck.Run(true, TelemetryHint, f.Temp, f.Power);
+            var snap = EnvironmentSelfCheck.Run(true, TelemetryHint, f.Temp, f.Power);
             Settings.EnvironmentChecked = true;
-            SettingsStore.Save(Settings);
-            N(nameof(CapabilitySummaryText)); N(nameof(DependencyHintText));
-            N(nameof(DisabledItemsText)); N(nameof(CapabilityReportText));
-            N(nameof(CapabilityOneLineText));
-            AddAlert("info", "环境自检（含写入探测）", _capability.Summary);
-            return _capability.Summary + "；" + _capability.DisabledText;
+            try { SettingsStore.Save(Settings); } catch { /* 落盘失败不影响检测结果 */ }
+            ApplyCapability(snap);
+            AddAlert("info", "环境自检（含写入探测）", snap.Summary);
+            return snap.Summary + "；" + snap.DisabledText;
         }
         catch (Exception ex)
         {
@@ -493,12 +622,15 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                     _fwHwp = h;
                     N(nameof(FwMinPerfText)); N(nameof(FwMaxPerfText));
                     N(nameof(FwActivityWindowText)); N(nameof(HwpEditable)); N(nameof(FwHwpMaxPerf));
+                    N(nameof(MinPerfRangeText)); N(nameof(MaxPerfRangeText));
+                    N(nameof(ActivityWindowRangeText));
                 }
                 double epp = h.Epp;
                 if (epp != _fwEpp)
                 {
                     _fwEpp = epp;
                     N(nameof(FwEppText)); N(nameof(EppEditable)); N(nameof(EppHintText));
+                    N(nameof(EppRangeText));
                 }
             }
             if (guard.Channel.TryRead(TurboRatioLimit.MsrTurboRatioLimit, out ulong turboRaw) && turboRaw != 0)
@@ -639,11 +771,11 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public string CpuLoadText => $"{LoadPct:F0}%";
     private string LhmCpuTotalText => double.IsNaN(_lhmCpuTotal) ? "N/A" : $"{_lhmCpuTotal:F0}%";
 
-    /// <summary>CPU 卡 ToolTip：交代系统计时口径、任务管理器两个数字的来历、为何弃用 LHM CPU Total。</summary>
+    /// <summary>CPU 卡 ToolTip：交代系统计时口径与任务管理器两个数字的来历。</summary>
     public string CpuLoadHintText =>
-        "CPU 负载 = Windows 系统计时（GetSystemTimes）差分：总时间中非空闲占比，按全部逻辑核汇总后落在 0~100%，与任务管理器同一数据源。\n" +
-        "任务管理器「利用率」用频率加权的 % Processor Utility，轻载睿频时会略高于本值；「速度」= 基准频率 × % Processor Performance，是瞬时有效频率，不代表满载。\n" +
-        $"LHM CPU Total（线程级估算，当前 {LhmCpuTotalText}）只作诊断对照：它随两次 Update 的窗口跳动，实测同一进程内可相差数倍，曾造成「高负载 + 低功耗 + 低温」的自相矛盾判断，故不进界面与决策树。";
+        "CPU 负载 = Windows 系统计时（GetSystemTimes）差分：非空闲时间占比，与任务管理器同一数据源。\n" +
+        "任务管理器「利用率」按频率加权，轻载睿频时略高于本值；「速度」是瞬时有效频率，不代表满载。\n" +
+        $"备选传感器读数（{LhmCpuTotalText}）为线程级估算，仅作诊断对照，不参与界面数值与决策。";
 
     public string GpuLoadText => double.IsNaN(_gpuLoadPct) ? "N/A" : $"{_gpuLoadPct:F0}%";
     public string GpuMemoryText => double.IsNaN(_gpuMemPct) ? "N/A" : $"{_gpuMemPct:F0}%";
@@ -701,28 +833,25 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         get
         {
             if (double.IsNaN(_fanMeasuredPct) && double.IsNaN(_fanRpm))
-                return "本机 LHM 与内置 EC / NBFC 均不可读；不拿决策树的演算建议值冒充实测。";
+                return "当前没有可用的风扇读数；不拿决策树的演算建议值冒充实测。";
 
             string head = !double.IsNaN(_fanRawValue)
                 ? $"EC 原始值 {_fanRawValue:F0} → 档位 {_fanMeasuredPct:F1}%（按生效配置 Min/Max 线性换算并钳到 0~100）。"
                 : "来源：NBFC 服务按生效配置换算的档位百分比（未取得原始字节）。";
             string stability = _fanStagnant
-                ? $"连续 {_fanStagnantReads} 次真实采样（约每 2.2 秒一次）原始值完全不变：疑似非实时读数，不能据此判断风扇是否在转。"
-                : "原始值逐拍采集（约每 2.2 秒一次）；尚未触发恒定判定。";
+                ? $"连续 {_fanStagnantReads} 次采样原始值不变，读数可能非实时，不能据此判断风扇是否在转。"
+                : "原始值逐拍采集，约每 2.2 秒一次。";
             return head + "\n" + stability +
-                   "\n本机无物理转速 RPM 传感器；该值是 EC 档位刻度，软件只读 EC，从不写 EC/PWM。";
+                   "\n本机无转速传感器；该值是 EC 档位刻度，软件只读不写。";
         }
     }
     public string GpuSourceText => string.IsNullOrEmpty(_gpuSource) ? "未检测到 GPU" : _gpuSource;
     public string GpuNameText => string.IsNullOrEmpty(_gpuName) ? "未检测到 GPU" : _gpuName;
     public string GpuHintText =>
         $"{GpuNameText} · {GpuSourceText}\n" +
-        "GPU 负载：LHM 走 NVIDIA NVAPI 的 GPU Core 活动率（整卡核心，核显回退 D3D 引擎峰值）。\n" +
-        "这是本工具的主指标：与 GPU 温度 / 功耗同源于硬件传感器、跨厂商统一，最贴近散热与功耗判断。\n" +
-        "任务管理器「利用率」取 PDH GPU Engine 分引擎、分进程利用率（本机一次枚举 318 个实例，按引擎聚合），\n" +
-        "口径不同，数值不必逐拍一致；分引擎满载也可能几乎不耗电，不适合作为热策略的输入。\n" +
-        "GPU 温度：LHM 的 GPU Core 温度传感器；显存占用按专用显存 Used/Total 计算，不含共享显存。\n" +
-        "N/A 表示来源都不可用，不用演算值冒充。";
+        "主指标取整卡核心活动率（NVAPI GPU Core，核显回退 D3D 引擎），与温度 / 功耗同源，最贴近散热判断。\n" +
+        "任务管理器取 PDH GPU Engine 的分引擎、分进程利用率（某些机型一次可枚举数百个实例），口径不同，数值不必逐拍一致。\n" +
+        "显存按专用显存 Used/Total 计算，不含共享显存；N/A 表示来源不可用，不用演算值冒充。";
 
     private double _rth = double.NaN;
     public double Rth
@@ -810,6 +939,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             N(nameof(StatusAction));
             N(nameof(CanCalibrate));
             N(nameof(CalibrationBlockedReason));
+            N(nameof(CalibrationGateHint));
+            N(nameof(CalibrationGateVisibility));
         }
     }
 
@@ -824,6 +955,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             N(nameof(CanCalibrate));
             N(nameof(CalibrationText));
             N(nameof(CalibrationBlockedReason));
+            N(nameof(CalibrationGateHint));
+            N(nameof(CalibrationGateVisibility));
         }
     }
 
@@ -842,14 +975,14 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         get
         {
             if (_isCalibrating) return "标定进行中";
-            if (!_tempAvailable) return "缺少温度读数：请以管理员重启并确认 WinRing0 驱动已加载，或检查固件是否屏蔽温度";
+            if (!_tempAvailable) return "缺少温度读数：请以管理员身份重新启动，并确认调优组件可用";
             if (!_powerFromDriver) return MsrStatus switch
             {
-                MsrStatus.NoAdmin => "缺少实测功耗：普通权限读不到 MSR，请点「以管理员重启」后标定",
-                MsrStatus.NotInstalled => "缺少实测功耗：以管理员重启即可加载 WinRing0 驱动并读取 RAPL 功耗",
-                MsrStatus.DriverUnavailable => "缺少实测功耗：WinRing0 驱动未加载（检查 HVCI 内存完整性 / 安全软件拦截）",
-                MsrStatus.ModuleUnavailable => "缺少实测功耗：当前 LHM 程序集不提供 Ring0 MSR 接口（需 0.9.4）",
-                _ => "缺少实测功耗：RAPL 与 LHM 都不可用，估算功耗无法做稳态标定"
+                MsrStatus.NoAdmin => "缺少实测功耗：普通权限读不到功耗，请点「以管理员重启」",
+                MsrStatus.NotInstalled => "缺少实测功耗：调优组件未安装，可在「诊断与日志」页安装",
+                MsrStatus.DriverUnavailable => "缺少实测功耗：调优组件打不开，详见「诊断与日志」",
+                MsrStatus.ModuleUnavailable => "缺少实测功耗：调优组件不完整或为只读版本",
+                _ => "缺少实测功耗：功耗来源不可用，估算值无法用于稳态检测"
             };
             return "可以开始标定";
         }
@@ -943,6 +1076,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     {
         get
         {
+            if (!SensorsReady) return StatusLevel.Info;
             if (!DriverAvailable) return StatusLevel.Warn;
             if (!TempAvailable) return StatusLevel.Warn;
             if (Environment.Generation == 0) return StatusLevel.Info;
@@ -954,6 +1088,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     {
         get
         {
+            if (!SensorsReady) return "正在读取传感器…（首次约 2 秒）";
             if (!DriverAvailable) return "温度不可用 · 未检测到硬件访问驱动";
             if (!TempAvailable) return IsElevated ? "温度不可用 · 传感器无读数" : "受限权限 · 读取温度需要管理员";
             if (Environment.Generation == 0) return "保守基线 · 未识别平台，已按 7 代区间运行";
@@ -962,6 +1097,18 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     }
 
     public string StatusAction => DriverAvailable ? "查看诊断" : "以管理员重启";
+
+    /// <summary>
+    /// 产品版本：唯一来源是程序集版本（csproj 的 Version）。界面、自检报告、关于页都读这里，
+    /// 避免再出现「侧栏写一个版本、关于页写另一个版本」的漂移。
+    /// </summary>
+    public string VersionText { get; } = ResolveVersion();
+
+    private static string ResolveVersion()
+    {
+        var v = typeof(SessionState).Assembly.GetName().Version;
+        return v is null ? "v0.0.0" : $"v{v.Major}.{v.Minor}.{v.Build}";
+    }
 
     // ---------------- 集合 ----------------
 
@@ -977,6 +1124,10 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         $"最近 {TempHistory.Count * Settings.IntervalMs / 1000.0:F0} 秒 · " +
         $"采样 {1000.0 / Math.Max(1, Settings.IntervalMs):0.#} Hz · {TempHistory.Count} 点";
     public string HistoryStartText => $"-{TempHistory.Count * Settings.IntervalMs / 1000.0:F0} s";
+
+    /// <summary>图表口径说明：一条固定短句，条件描述与 MetricChart 实际行为一致。</summary>
+    public string HistoryHintText =>
+        "各序列按自身量程独立归一化、共用时间轴，交叉点无物理含义。天花板参考线只在落入温度量程时绘制，右上角标注始终可见。";
 
     /// <summary>
     /// 注册统一图表序列。风扇只登记「只读实测」口径：
@@ -1044,7 +1195,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public bool RealWriteEnabled => Settings.AllowRealWrite && MsrWritable;
     public bool HasMsrBackup => _guard?.StartupBackup is not null;
 
-    /// <summary>写入闸门：管理员 + WinRing0 通道可写 + 设置页显式授权。</summary>
+    /// <summary>写入闸门：管理员 + PawnIO / IntelMSR 通道可写 + 设置页显式授权。</summary>
     public bool WriteGatesOpen => MsrWritable && Settings.AllowRealWrite && IsElevated;
 
     /// <summary>动态自动通道（决策树每拍）是否允许写；选中档位 / 手工保存不受它约束。</summary>
@@ -1075,9 +1226,27 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                          : "智能微调 · 只读演算";
 
     public string GateReason => IsElevated
-        ? (MsrWritable ? (Settings.AllowRealWrite ? "闸门已开" : "设置页未勾选「允许写入 MSR」")
-                       : $"MSR 通道不可写：{MsrStatusText}")
+        ? (MsrWritable ? (Settings.AllowRealWrite ? "闸门已开" : "设置页未勾选「允许写入硬件参数」")
+                       : $"调优通道当前只读：{MsrStatusText}")
         : "需要管理员权限";
+
+    /// <summary>智能微调页档位卡标题：按真实写入能力切换，只读态不承诺下发。</summary>
+    public string ProfileCardTitle => IsManualMode
+        ? "使用档位 · 仅演算"
+        : WriteGatesOpen ? "使用档位 · 选中即生效" : "使用档位 · 选中仅演算";
+
+    /// <summary>档位卡说明：与标题同源双态，避免「说明说会写、状态框说不能写」。</summary>
+    public string ProfileCardHint => IsManualMode
+        ? "手工模式下手动选档只更新意图与演算结果，不写寄存器；要写入请到「手工微调」页。"
+        : WriteGatesOpen
+            ? "点选档位立即重算决策并下发一次，风险场景先二次确认；之后按 1W 台阶与升档冷却低频微调。PL1 由温度与热阻决定，不是写死的瓦数。"
+            : $"当前不可写（{GateReason}）：点选档位只重算决策并给出下发计划，硬件保持不变。";
+
+    /// <summary>标定按钮的常驻原因：禁用控件弹不出 ToolTip，所以原因必须写在页面上。</summary>
+    public string CalibrationGateHint => CanCalibrate ? string.Empty : CalibrationBlockedReason;
+
+    public System.Windows.Visibility CalibrationGateVisibility =>
+        CanCalibrate ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
 
     /// <summary>概览页写入链路说明：随真实闸门状态变化，不把「可写」说成「已在写」。</summary>
     public string MonitorHintText => IsManualMode
@@ -1135,7 +1304,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         AddAlert("info", "标定推荐已更新（L2）",
             "热阻与推荐参数写入 settings.json，下次开机自动加载；固件默认值不受影响。" +
             "标定只产出通用安全参数（PL1 / PL2 / Tau / EPP），不碰电压偏移、睿频倍率与温度墙。" +
-            "注意：0x774 项（EPP / Min-Max Perf / Activity Window）可能被系统电源策略覆盖，稳定生效的是 0x610 三项。" +
+            "注意：能效偏好与性能档可能被系统电源策略覆盖，稳定生效的是功耗三项。" +
             (Settings.Manual is not null
                 ? "检测到已有用户编辑值（L3）：本次标定不会覆盖它，是否应用新推荐由你决定。"
                 : "尚无用户编辑值，可在高级参数页应用推荐。") +
@@ -1174,7 +1343,9 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
                 // RAPL 只读计量：复用同一个 Ring0 驱动句柄，避免重复加载内核驱动
                 _rapl = new RaplPowerMeter(channel, Environment.Vendor);
-                _telemetry.AttachRapl(_rapl);
+                _pendingRapl = _rapl;
+                // 遥测可能是后台线程后建的，先存起来，接上时自动挂载
+                _telemetry?.AttachRapl(_rapl);
                 if (!_rapl.Available)
                     AddAlert("warn", "功耗计量不可用", _rapl.Detail + "；功耗将退回估算值，标定会被禁用。");
                 if (_guard.HasPendingRestore)
@@ -1260,7 +1431,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         if (!RealWriteEnabled)
         {
             AddAlert("warn", "已保存微调参数未生效",
-                "开机重放需要管理员 + 设置页「允许写入 MSR」；CPU 当前按固件默认值运转。");
+                "开机重放需要管理员权限与设置页的写入授权；CPU 当前按出厂默认值运转。");
             return;
         }
 
@@ -1418,6 +1589,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         N(nameof(TuningModeText)); N(nameof(ModeStatusText)); N(nameof(FooterMode));
         N(nameof(MonitorHintText)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
         N(nameof(CooldownText));
+        N(nameof(ProfileCardTitle)); N(nameof(ProfileCardHint));
+        N(nameof(CalibrationGateHint)); N(nameof(CalibrationGateVisibility));
     }
 
     public void SetReplayOnStartup(bool on)
@@ -1435,15 +1608,17 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         N(nameof(MsrSummary));
         N(nameof(MonitorHintText)); N(nameof(ModeStatusText)); N(nameof(GateReason));
         N(nameof(FooterMode)); N(nameof(AutoApplyAllowed)); N(nameof(AutoApplyGateText));
+        N(nameof(ProfileCardTitle)); N(nameof(ProfileCardHint));
+        N(nameof(CalibrationGateHint)); N(nameof(CalibrationGateVisibility));
     }
 
     /// <summary>真实写入；未授权或通道不可写时直接拒绝（不静默降级成演练）。</summary>
     public MsrWriteResult ApplyLimits(double pl1, double pl2, double tau, bool writeTimeWindow = false)
     {
         if (_guard is null)
-            return new MsrWriteResult(MsrWriteOutcome.NotWritable, $"MSR 通道不可用：{MsrDetail}");
+            return new MsrWriteResult(MsrWriteOutcome.NotWritable, $"调优通道不可用：{MsrDetail}");
         if (!Settings.AllowRealWrite)
-            return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」（设置页）");
+            return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入硬件参数」（设置页）");
 
         var result = _guard.Apply(pl1, pl2, tau, writeTimeWindow);
 
@@ -1466,7 +1641,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     {
         if (_guard is null || !_guard.EppSupported)
             return new MsrWriteResult(MsrWriteOutcome.Rejected,
-                "当前通道读不到 0x774，EPP 微调不可用（PL1/PL2/Tau 不受影响）");
+                "本机读不到能效偏好，该项不可用（功耗三项不受影响）");
         if (!Settings.AllowRealWrite)
             return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」");
 
@@ -1483,7 +1658,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         int epp = -1, int activityWindow = -1)
     {
         if (_guard is null || !_guard.EppSupported)
-            return new MsrWriteResult(MsrWriteOutcome.Rejected, "0x774 不可读，HWP 参数微调不可用");
+            return new MsrWriteResult(MsrWriteOutcome.Rejected, "本机读不到能效偏好，该项不可用");
         if (!Settings.AllowRealWrite)
             return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」");
 
@@ -1500,7 +1675,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public MsrWriteResult ApplyVoltageIfSupported(int offsetMv)
     {
         if (_guard is null || !_guard.VoltageReadable)
-            return new MsrWriteResult(MsrWriteOutcome.Rejected, "0x150 不可读，电压偏移不可用");
+            return new MsrWriteResult(MsrWriteOutcome.Rejected, "本机读不到电压偏移，该项不可用");
         if (!CpuCaps.VoltageOffsetPlausible)
             return new MsrWriteResult(MsrWriteOutcome.Rejected, CpuCaps.VoltageHint);
         if (!Settings.AllowRealWrite)
@@ -1522,7 +1697,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     {
         if (_guard is null || !_guard.TurboSupported)
             return new MsrWriteResult(MsrWriteOutcome.Rejected,
-                "当前通道读不到 0x1AD，睿频倍率调节不可用（PL1/PL2/Tau 不受影响）");
+                "本机读不到睿频倍率，该项不可用（功耗三项不受影响）");
         if (!Settings.AllowRealWrite)
             return new MsrWriteResult(MsrWriteOutcome.NotWritable, "未开启「允许写入 MSR」");
 
@@ -1553,7 +1728,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
     public MsrWriteResult RestoreOriginal()
     {
         if (_guard is null)
-            return new MsrWriteResult(MsrWriteOutcome.RestoreUnavailable, $"MSR 通道不可用：{MsrDetail}");
+            return new MsrWriteResult(MsrWriteOutcome.RestoreUnavailable, $"调优通道不可用：{MsrDetail}");
 
         var result = _guard.Restore();
         var epp = _guard.RestoreEpp();
@@ -1770,7 +1945,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             _lastWriteText = $"已下发 {pl1W:F1}W（{ChannelText()}{ (force ? " · 二次确认" : "") }）";
             N(nameof(LastWriteText)); N(nameof(ModeStatusText)); N(nameof(CooldownText));
             AddAlert("info", "寄存器已下发",
-                $"PL1 {pl1W:F1}W / PL2 {pl2W:F0}W 写入 0x610 并回读校验；{decision.Reason}。" +
+                $"持续功耗 {pl1W:F1}W / 短时功耗 {pl2W:F0}W 已写入并回读校验；{decision.Reason}。" +
                 "功耗/频率收敛仍需 Tau 量级时间，不等于性能立刻变化。");
             return new WriteOutcome(true, r.Message, decision.StepPl1W, force);
         }
@@ -2059,7 +2234,16 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
 
     private void Tick()
     {
-        var s = _telemetry.Read();
+        if (_telemetry is not { } telemetry)
+        {
+            // 传感器还在后台枚举（约 2 秒）：这一拍跳过采样与决策，只把「正在读取」状态推到界面。
+            // 不写任何值，避免指标卡先显示 0 再跳变。
+            N(nameof(SensorsReady)); N(nameof(SensorsWarming)); N(nameof(SensorStatusText));
+            N(nameof(StatusText)); N(nameof(StatusLevel));
+            return;
+        }
+
+        var s = telemetry.Read();
 
         LoadPct = double.IsNaN(s.LoadPercent) ? 0 : s.LoadPercent;
 
@@ -2092,6 +2276,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         if (!double.IsNaN(s.MaxCoreGhz)) ClockGhz = s.MaxCoreGhz;
 
         TempAvailable = !double.IsNaN(s.TempC);
+        // 第一拍真实读数出来后再判定「哪些参数可取」，避免用默认值猜可读性
+        ResolvePendingCapability();
         if (!TempAvailable)
         {
             _noTempTicks++;
@@ -2099,7 +2285,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
                 AddAlert("warn", "温度读数不可用",
                     DriverAvailable
                         ? "驱动可用但传感器无读数，请检查是否被虚拟化/固件屏蔽。"
-                        : "未检测到硬件访问驱动：请以管理员重启（WinRing0 内核驱动需要管理员权限）。");
+                        : "未检测到硬件访问能力：请以管理员身份重新启动，并在「诊断与日志」页确认调优组件已就绪。");
 
             if (IsCalibrating) FailCalibration("标定过程中温度读数中断");
             Ticked?.Invoke();
@@ -2156,7 +2342,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
             : double.NaN;
         ThermalCapText = double.IsNaN(dec.ThermalCapW)
             ? "标定前馈未启用：完成两段式标定后，热模型会按天花板钳制决策上限"
-            : $"标定前馈已生效：决策 PL1 上限 {dec.ThermalCapW:F0}W（天花板 {CeilingC:F0}°C）";
+            : $"标定前馈已生效：目标功耗上限 {dec.ThermalCapW:F0}W（天花板 {CeilingC:F0}°C）";
         LastRule = _controller.LatestReceipt?.TriggeredRuleName ?? "—";
         LastReason = dec.Reason;
         LastPath = string.Join(" → ", _controller.LatestReceipt?.EvaluatedPath ?? Array.Empty<string>());
@@ -2336,7 +2522,8 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public IEnumerable<string> DumpSensors() => _telemetry.DumpSensors();
+    public IEnumerable<string> DumpSensors() =>
+        _telemetry?.DumpSensors() ?? new[] { "传感器尚未就绪" };
 
     public void Dispose()
     {
@@ -2345,7 +2532,7 @@ public sealed class SessionState : INotifyPropertyChanged, IDisposable
         var pending = _thermalEvents.Flush(DateTime.UtcNow);
         if (pending is not null) AppendThermalEvent(pending);
         _stress?.Dispose();
-        _telemetry.Dispose();
+        _telemetry?.Dispose();
         _guard?.Dispose();
     }
 }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -14,7 +14,7 @@ namespace ThermalTuner.App;
 ///   1. 写入能力探测：把固件当前 PL1/PL2/Tau 同值写回，验证「写入 → 回读 → 恢复」链路；
 ///   2. 空载基线 → 满载稳态 → 冷却 → 低负载对照 → 冷却，每秒采样
 ///      温度 / 包功耗 / 核频 / 负载 / 0x610 实读 PL1 / 决策 PL1；
-///   3. 若本机可写 0x610（LHM 0.9.4 WinRing0 通道）：追加「降墙 / 放宽」两段满载做真 A/B/C，
+///   3. 若本机可写 0x610（PawnIO / IntelMSR 通道）：追加「降墙 / 放宽」两段满载做真 A/B/C，
 ///      结束恢复固件默认值；若不可写：用「低负载对照」证明功耗下降确实带来可观测的降温，
 ///      并用标定热阻外推「若 PL1 真被压到实际功耗之下」应有的温降。
 ///
@@ -372,13 +372,12 @@ internal static class StressProbe
                           $"放宽到 {F(highReal, 0)}W 无意义，压到 {F(lowReal, 0)}W 才有限制作用。");
             sb.AppendLine("4) 固件 Tau≈28672s 是超长平均窗口，短时压测必须同时缩短 Tau 才能观察到钳制；");
             sb.AppendLine("   风扇仍由 EC 按温度曲线自动调速，软件通过少发热间接降速，不直接拨风扇。");
-            sb.AppendLine("5) 上一轮『本机不可写』结论有误：根因是 LHM 从 0.9.4 升到 0.9.6 后驱动后端变为只读 PawnIO 模块；");
-            sb.AppendLine("   本版已回退到 0.9.4 WinRing0 通道并实机验证。");
+            sb.AppendLine("5) 写入链路为 PawnIO + 随包可写 IntelMSR 模块；写入能力一律以 --write-test 实测为准。");
         }
         else
         {
             sb.AppendLine("1) 软件真正尝试写入的只有 MSR 0x610 的 PL1 / PL2 / Tau 与 0x774 EPP；");
-            sb.AppendLine("   风扇 / EC / PWM / 电源计划 / 电压 / 倍频一律不碰。");
+            sb.AppendLine("   压测期间不碰风扇 / EC / PWM / 电源计划 / 电压 / 倍频。");
             sb.AppendLine("2) 本次实测：0x610 写入被驱动拒绝，全程 0 次成功写入，CPU 寄存器始终是固件默认值。");
             sb.AppendLine("3) 没有直观感受的四层原因：");
             sb.AppendLine("   a. 写入链路不通 + 双开关未开 → 参数根本没改；");

@@ -1,0 +1,107 @@
+﻿<Window x:Class="ThermalTuner.App.Windows.StartupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ThermalTuner"
+        Width="620" SizeToContent="Height" MaxHeight="600"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgSurface}"
+        FontFamily="{StaticResource UiFont}" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+
+  <!-- 刻意不用 AllowsTransparency + DropShadowEffect：那两项会让首帧绘制慢几百毫秒，
+       而启动页最重要的指标就是「多快能看见东西」。用系统标题栏换取即时可见。 -->
+  <Border Background="{StaticResource BgSurface}" CornerRadius="0"
+          BorderBrush="{StaticResource Border}" BorderThickness="1">
+
+    <Grid Margin="28,24,28,20">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- 品牌行 -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal">
+        <Border Width="34" Height="34" CornerRadius="9" Background="{StaticResource Accent}">
+          <TextBlock Text="TT" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     FontFamily="{StaticResource MonoFont}" />
+        </Border>
+        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="ThermalTuner" Style="{StaticResource H2}" />
+          <TextBlock x:Name="VersionText" Style="{StaticResource Label}" FontSize="11" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- 结论行 -->
+      <StackPanel Grid.Row="1" Margin="0,20,0,0">
+        <TextBlock x:Name="Headline" Style="{StaticResource H1}" Text="正在准备运行环境" />
+        <TextBlock x:Name="HeadlineDetail" Style="{StaticResource Body}" Margin="0,6,0,0"
+                   TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}"
+                   Text="正在确认本机硬件与可调参数，通常只需 1–2 秒。" />
+      </StackPanel>
+
+      <!-- 步骤 -->
+      <StackPanel Grid.Row="2" Margin="0,16,0,0">
+        <Grid Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="Step0Dot" Text="·" Foreground="{StaticResource TextTertiary}" FontSize="14" />
+          <TextBlock x:Name="Step0Text" Grid.Column="1" Text="载入个人设置" Style="{StaticResource RowText}" />
+          <TextBlock x:Name="Step0Detail" Grid.Column="2" Style="{StaticResource Hint}"
+                     HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+        </Grid>
+
+        <Grid Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="Step1Dot" Text="·" Foreground="{StaticResource TextTertiary}" FontSize="14" />
+          <TextBlock x:Name="Step1Text" Grid.Column="1" Text="确认硬件与参数能力" Style="{StaticResource RowText}" />
+          <TextBlock x:Name="Step1Detail" Grid.Column="2" Style="{StaticResource Hint}"
+                     HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" MaxWidth="300" />
+        </Grid>
+
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="Step2Dot" Text="·" Foreground="{StaticResource TextTertiary}" FontSize="14" />
+          <TextBlock x:Name="Step2Text" Grid.Column="1" Text="准备监测数据" Style="{StaticResource RowText}" />
+          <TextBlock x:Name="Step2Detail" Grid.Column="2" Style="{StaticResource Hint}"
+                     HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+        </Grid>
+
+        <ProgressBar x:Name="Progress" Height="3" Margin="0,16,0,0" IsIndeterminate="True"
+                     Foreground="{StaticResource Accent}" Background="{StaticResource Border}"
+                     BorderThickness="0" />
+      </StackPanel>
+
+      <!-- 操作区 -->
+      <Grid Grid.Row="3" Margin="0,18,0,0">
+        <TextBlock x:Name="FootHint" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                   TextWrapping="Wrap" MaxWidth="330" HorizontalAlignment="Left"
+                   Text="检测结果会被记住：只有首次运行、更换设备、升级程序或更换运行权限时才重新检测。" />
+
+        <StackPanel x:Name="ActionPanel" Orientation="Horizontal" HorizontalAlignment="Right"
+                    VerticalAlignment="Center" Visibility="Collapsed">
+          <Button x:Name="MonitorButton" Content="仅查看监控" Style="{StaticResource GhostButton}"
+                  Margin="0,0,8,0" Click="Monitor_Click" Visibility="Collapsed"
+                  ToolTip="以观测模式进入：显示全部指标，但不改写任何设置。" />
+          <Button x:Name="RetryButton" Content="重新检测" Style="{StaticResource GhostButton}"
+                  Margin="0,0,8,0" Click="Retry_Click" />
+          <Button x:Name="ElevateButton" Content="以管理员身份重启" Style="{StaticResource PrimaryButton}"
+                  Click="Elevate_Click" />
+        </StackPanel>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>
