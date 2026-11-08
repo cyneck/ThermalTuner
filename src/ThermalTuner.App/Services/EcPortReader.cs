@@ -7,21 +7,27 @@ using LibreHardwareMonitor.Hardware;
 namespace ThermalTuner.App.Services;
 
 /// <summary>
-/// 内置 EC 只读：复用 LHM 0.9.4 / WinRing0 已加载的 Ring0 端口接口读 ACPI EC 寄存器，
+/// 内置 EC 只读：反射绑定 LibreHardwareMonitor 的 Ring0 端口接口读 ACPI EC 寄存器，
 /// 不再依赖 NBFC 随包的 ec-probe.exe（NBFC 卸载后风扇指标仍可采集）。
+///
+/// 【v0.5.1 兼容缺口，待实测】LHM 已由 0.9.4(WinRing0) 升到 0.9.6(PawnIO)，
+/// Ring0.ReadIoPort / WriteIoPort 在新后端下是否仍覆盖 0x62 / 0x66 **尚未重新验证**。
+/// PawnIO 官方模块体系中，ACPI EC 端口访问由 LpcACPIEC 模块提供（端口白名单恰为 0x62/0x66，
+/// 需配合命名互斥 \BaseNamedObjects\Access_EC），与 IntelMSR 模块是两条独立通道。
+/// 若 --ec-probe 在 v0.5.1 下失败，属于端口 I/O 通道缺口，**不得据此推断 MSR 写入能力异常**。
 ///
 /// 【边界，必须保持】
 /// · 只向 EC 命令端口 0x66 写 READ_EC(0x80)、向数据端口 0x62 写「要读的寄存器地址」，
 ///   这是 EC 读操作必需的握手；**不写任何 EC 寄存器内容**，尤其不写风扇控制寄存器
 ///   （NBFC 生效配置里的 WriteRegister=148），也不提供任何写 EC 的公共入口。
 /// · 绝不调用 Ring0.WriteIoPort 去写寄存器数据；端口写仅用于上述两个握手字节。
-/// · 与 BIOS 共享 EC 端口存在竞态（LHM 0.9.4 官方 XML 对 WindowsEmbeddedControllerIO
+/// · 与 BIOS 共享 EC 端口存在竞态（LHM 官方文档对 WindowsEmbeddedControllerIO
 ///   明确提示 unsafe / race condition）。收敛措施：进程内互斥 + 上层 2.2s 低频 +
-///   每步严格超时 + 连续失败自动降级并停止探询。
-/// · 需要管理员：GUI 模式下 WinRing0 驱动由 HardwareTelemetry 的 Computer.Open() 加载；
-///   命令行模式（--ec-probe）没有该实例，此时最多尝试一次反射调用 Ring0.Open()
-///   自行加载（与 MsrChannel 既有做法一致），失败即降级，不反复尝试加载驱动。
-///   普通权限下 Ring0.IsOpen=false，本类返回不可用，不触碰端口。
+///   每步严格超时 + 连续失败自动降级并停止探询。PawnIO 官方 LpcACPIEC 模块另要求
+///   跨进程命名互斥 \BaseNamedObjects\Access_EC，本类当前仅做进程内互斥。
+/// · 需要管理员：命令行模式（--ec-probe）最多尝试一次反射调用 Ring0.Open() 自行加载，
+///   失败即降级，不反复尝试。普通权限下 Ring0.IsOpen=false，本类返回不可用，不触碰端口。
+///   v0.5.1 起 LHM 改为 0.9.6 / PawnIO，该加载路径是否仍有效须以 --ec-probe 实测为准。
 /// </summary>
 internal static class EcPortReader
 {
@@ -68,9 +74,9 @@ internal static class EcPortReader
         if (!_usable) return (false, 0, _reason);
         EnsureProbed();
         if (_readPort is null || _writePort is null)
-            return Fail("LHM 0.9.4 Ring0 未提供端口读写接口");
+            return Fail("当前 LHM Ring0 未提供端口读写接口（v0.5.1 / PawnIO 下需核对 EC 端口通道）");
         if (!DriverOpen() && !TryOpenDriver())
-            return Fail("WinRing0 驱动未加载（需以管理员启动）");
+            return Fail("Ring0 端口驱动未加载（需以管理员启动；v0.5.1 起请核对 LHM 0.9.6 / PawnIO 端口通道）");
 
         lock (IoGate)
         {
@@ -142,7 +148,7 @@ internal static class EcPortReader
 
     /// <summary>
     /// 命令行模式下没有 HardwareTelemetry 的 Computer.Open()，最多尝试一次
-    /// 反射调用 Ring0.Open() 自行加载 WinRing0（与 MsrChannel.cs 既有做法一致）。
+    /// 反射调用 Ring0.Open() 尝试激活端口访问通道（v0.5.1 起后端为 PawnIO，是否仍有效以 --ec-probe 实测为准）。
     /// 普通权限下 Open 会失败，捕获后降级，不反复尝试加载内核驱动。
     /// </summary>
     private static bool TryOpenDriver()

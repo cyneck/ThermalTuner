@@ -17,6 +17,7 @@ var suites = new (string Name, Action Run)[]
     ("ProfileEffect",      () => new ProfileEffectTests().RunAllTests()),
     ("FanPercent",         () => new FanPercentTests().RunAllTests()),
     ("FanStagnation",      () => new FanStagnationTests().RunAllTests()),
+    ("FanSource",          () => new FanSourceTests().RunAllTests()),
     ("WriteScheduler",     () => new WriteSchedulerTests().RunAllTests()),
     ("TrajectoryShaper",   () => new TrajectoryShaperTests().RunAllTests()),
     ("ThermalEvent",       () => new ThermalEventTests().RunAllTests())

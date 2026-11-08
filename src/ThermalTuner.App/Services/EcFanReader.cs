@@ -23,7 +23,7 @@ namespace ThermalTuner.App.Services;
 /// · NBFC 路径只调用 nbfc.exe status 与 ec-probe.exe 的 read / dump / monitor，
 ///   **绝不调用 ec-probe.exe write**。
 /// · 后期的「风扇微调」属于控制层，应单独实现并显式授权；这里只负责采集与自动判断。
-/// · 内置 EC 读与 ec-probe 一样需要管理员（WinRing0 驱动已加载）；普通权限下优雅回退。
+/// · 内置 EC 读与 ec-probe 一样需要管理员（Ring0 端口通道可用）；普通权限下优雅回退。
 /// · 读到的值是 EC 档位刻度（0~255 原始值归一化），**不是物理转速 RPM**。
 /// · 采集层同时做原始值恒定检测（FanStagnationDetector）：连续 10 次真实采样不变
 ///   即随读数上报「疑似非实时」，界面必须显示原始字节并加标注，不得当成实时转速。

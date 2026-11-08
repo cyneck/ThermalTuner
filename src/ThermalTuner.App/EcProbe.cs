@@ -13,7 +13,8 @@ namespace ThermalTuner.App;
 /// 若 NBFC 仍在则追加 nbfc status / ec-probe read/dump/monitor 做交叉验证。
 ///
 /// 用法：ThermalTuner.App.exe --ec-probe --out report.txt [--seconds 6]
-/// 内置 EC 读需要管理员（WinRing0 驱动已加载）；普通权限下会明确记录失败原因。
+/// 内置 EC 读需要管理员（Ring0 端口通道可用）；普通权限下会明确记录失败原因。
+/// v0.5.1 起 LHM 为 0.9.6 / PawnIO，端口通道是否仍覆盖 0x62/0x66 以本报告实测为准。
 /// 边界：内置路径只写 0x66=0x80 / 0x62=地址做读握手，绝不写 EC 寄存器内容；
 /// NBFC 路径只调用 read / dump / monitor，**绝不调用 write**。
 /// </summary>
@@ -60,7 +61,8 @@ internal static class EcProbe
         }
         else
         {
-            sb.AppendLine("说明        : 需以管理员启动且 WinRing0 驱动已加载；普通权限下内置 EC 不可用。");
+            sb.AppendLine("说明        : 需以管理员启动且 Ring0 端口通道可用；普通权限下内置 EC 不可用。" +
+                          " v0.5.1 起后端为 PawnIO，若 0x62/0x66 未开放请核对 LpcACPIEC 模块。");
         }
 
         string? dir = EcFanReader.FindDir();
